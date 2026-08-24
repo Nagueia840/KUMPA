@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadEnv } from '../config/env.js';
-import type { ChatMessage, ChatRole, Insight, Learning } from '../types/index.js';
+import type { ChatMessage, ChatRole, Insight, Learning, TradePlan } from '../types/index.js';
 
 /**
  * Memoria persistente en Supabase con fallback silencioso a "sin memoria"
@@ -55,6 +55,23 @@ export class MemoryStore {
     if (error) console.warn('[memory] saveInsight:', error.message);
   }
 
+  async saveTradePlan(chatId: number, plan: TradePlan): Promise<void> {
+    if (!this.supabase) return;
+    const { error } = await this.supabase.from('trade_plans').insert({
+      chat_id: chatId,
+      symbol: plan.symbol,
+      direction: plan.direction,
+      entry_low: plan.entryZone[0],
+      entry_high: plan.entryZone[1],
+      stop_loss: plan.stopLoss,
+      take_profits: plan.takeProfits,
+      position_size_pct: plan.positionSizePct,
+      reasoning: plan.reasoning,
+      event_risks: plan.eventRisks,
+    });
+    if (error) console.warn('[memory] saveTradePlan:', error.message);
+  }
+
   async saveLearning(learning: Learning): Promise<void> {
     if (!this.supabase) return;
     const { error } = await this.supabase.from('learnings').insert({
@@ -66,5 +83,27 @@ export class MemoryStore {
       tags: learning.tags,
     });
     if (error) console.warn('[memory] saveLearning:', error.message);
+  }
+
+  async getLearnings(chatId: number, limit = 10): Promise<Learning[]> {
+    if (!this.supabase) return [];
+    const { data, error } = await this.supabase
+      .from('learnings')
+      .select('topic, thesis, outcome, lesson, tags, created_at')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return (data as { topic: string; thesis: string; outcome: string; lesson: string; tags: string[]; created_at: string }[]).map(
+      (r) => ({
+        chatId,
+        topic: r.topic,
+        thesis: r.thesis,
+        outcome: r.outcome,
+        lesson: r.lesson,
+        tags: r.tags,
+        createdAt: Date.parse(r.created_at),
+      }),
+    );
   }
 }

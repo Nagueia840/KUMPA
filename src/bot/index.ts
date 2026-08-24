@@ -7,6 +7,10 @@ import { sessionMiddleware } from './middlewares/session.js';
 import { registerStart } from './commands/start.js';
 import { registerHelp } from './commands/help.js';
 import { registerScan } from './commands/scan.js';
+import { registerManiana } from './commands/maniana.js';
+import { registerPlan } from './commands/plan.js';
+import { registerThesis } from './commands/thesis.js';
+import { registerReview } from './commands/review.js';
 import type { Deps } from '../deps.js';
 
 /** Crea y configura la instancia del bot de Telegram. */
@@ -25,6 +29,10 @@ export function createBot(deps: Deps): Bot {
   registerStart(bot);
   registerHelp(bot);
   registerScan(bot, deps);
+  registerManiana(bot, deps);
+  registerPlan(bot, deps);
+  registerThesis(bot, deps);
+  registerReview(bot, deps);
 
   // Manejo global de errores
   bot.catch((err) => {

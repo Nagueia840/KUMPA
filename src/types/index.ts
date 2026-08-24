@@ -92,3 +92,22 @@ export interface Learning {
   tags: string[];
   createdAt: number;
 }
+
+/** Análisis red-team de una tesis de inversión. */
+export interface ThesisAnalysis {
+  thesis: string;
+  bullCase: string[];
+  bearCase: string[];
+  keyRisks: string[];
+  dataGaps: string[];
+  verdict: string;
+}
+
+/** Borrador de lección que devuelve el LLM en /review (el resto lo completa el comando). */
+export interface ReviewDraft {
+  topic: string;
+  thesis: string;
+  outcome: string;
+  lesson: string;
+  tags: string[];
+}
