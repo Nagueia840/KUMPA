@@ -6,9 +6,11 @@ import { rateLimitMiddleware } from './middlewares/rateLimit.js';
 import { sessionMiddleware } from './middlewares/session.js';
 import { registerStart } from './commands/start.js';
 import { registerHelp } from './commands/help.js';
+import { registerScan } from './commands/scan.js';
+import type { Deps } from '../deps.js';
 
 /** Crea y configura la instancia del bot de Telegram. */
-export function createBot(): Bot {
+export function createBot(deps: Deps): Bot {
   const env = loadEnv();
   setLogLevel(env.LOG_LEVEL);
 
@@ -22,6 +24,7 @@ export function createBot(): Bot {
   // Comandos
   registerStart(bot);
   registerHelp(bot);
+  registerScan(bot, deps);
 
   // Manejo global de errores
   bot.catch((err) => {

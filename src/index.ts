@@ -1,9 +1,11 @@
 import { loadEnv } from './config/env.js';
 import { createBot } from './bot/index.js';
+import { createDeps } from './deps.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
-  const bot = createBot();
+  const deps = await createDeps();
+  const bot = createBot(deps);
 
   if (env.BOT_MODE === 'polling') {
     console.info('[kumpa] Arrancando en modo polling…');
