@@ -8,6 +8,12 @@ try {
   // .env opcional
 }
 
+/** Convierte cadena vacía a undefined (estándar para vars de .env). */
+const emptyToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+
+/** URL opcional: vacío → undefined, o URL válida. */
+const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
+
 const envSchema = z.object({
   // ── Runtime ──────────────────────────────────────────────
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -19,21 +25,21 @@ const envSchema = z.object({
   ALLOWED_USER_IDS: z.string().default(''),
 
   // ── Supabase ─────────────────────────────────────────────
-  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_URL: optionalUrl,
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
 
   // ── LLM (opcional: puede venir de app_settings en Supabase)
   LLM_PROVIDER: z.enum(['groq', 'deepseek', 'openrouter', 'custom']).default('groq'),
   LLM_API_KEY: z.string().default(''),
-  LLM_BASE_URL: z.string().url().optional(),
+  LLM_BASE_URL: optionalUrl,
   LLM_MODEL: z.string().default(''),
   LLM_FAST_MODEL: z.string().default(''),
   LLM_SMART_MODEL: z.string().default(''),
 
   // ── Embeddings (memoria semántica; OpenAI text-embedding-3-small por defecto)
   EMBEDDING_API_KEY: z.string().default(''),
-  EMBEDDING_BASE_URL: z.string().url().optional(),
+  EMBEDDING_BASE_URL: optionalUrl,
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
 
   // ── Fuentes de datos ─────────────────────────────────────
@@ -48,7 +54,7 @@ const envSchema = z.object({
   FRED_API_KEY: z.string().default(''),
 
   // ── Redis (BullMQ, opcional en MVP) ──────────────────────
-  UPSTASH_REDIS_URL: z.string().url().optional(),
+  UPSTASH_REDIS_URL: optionalUrl,
 });
 
 export type Env = z.infer<typeof envSchema>;

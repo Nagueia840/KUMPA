@@ -32,7 +32,7 @@ export async function analyzeScan(llm: LLMClient, scan: AggregatedScan): Promise
     system: KUMPA_SYSTEM_PROMPT,
     model: llm.settings.smartModel,
     temperature: 0.4,
-    maxTokens: 1200,
+    maxTokens: 2000,
   });
 }
 
@@ -69,7 +69,7 @@ export async function analyzePlan(
     system: KUMPA_SYSTEM_PROMPT,
     model: llm.settings.smartModel,
     temperature: 0.4,
-    maxTokens: 1200,
+    maxTokens: 2000,
   });
 }
 
@@ -98,7 +98,7 @@ export async function analyzeThesis(
     system: KUMPA_SYSTEM_PROMPT,
     model: llm.settings.smartModel,
     temperature: 0.5,
-    maxTokens: 1200,
+    maxTokens: 2000,
   });
 }
 
@@ -121,7 +121,7 @@ export async function analyzeReview(llm: LLMClient, userInput: string): Promise<
     system: KUMPA_SYSTEM_PROMPT,
     model: llm.settings.smartModel,
     temperature: 0.4,
-    maxTokens: 800,
+    maxTokens: 1500,
   });
 }
 
@@ -138,6 +138,6 @@ export async function analyzeBriefing(llm: LLMClient, briefing: Briefing): Promi
     system: KUMPA_SYSTEM_PROMPT,
     model: llm.settings.fastModel,
     temperature: 0.5,
-    maxTokens: 800,
+    maxTokens: 1500,
   });
 }
