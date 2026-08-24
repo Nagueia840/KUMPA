@@ -13,6 +13,7 @@ import { registerThesis } from './commands/thesis.js';
 import { registerReview } from './commands/review.js';
 import { registerAlerta } from './commands/alerta.js';
 import { registerRecordar } from './commands/recordar.js';
+import { registerChat } from './handlers/chat.js';
 import type { Deps } from '../deps.js';
 
 /** Crea y configura la instancia del bot de Telegram. */
@@ -27,7 +28,7 @@ export function createBot(deps: Deps): Bot {
   bot.use(rateLimitMiddleware);
   bot.use(sessionMiddleware);
 
-  // Comandos
+  // Comandos (tienen prioridad sobre la conversación libre)
   registerStart(bot);
   registerHelp(bot);
   registerScan(bot, deps);
@@ -37,6 +38,9 @@ export function createBot(deps: Deps): Bot {
   registerReview(bot, deps);
   registerAlerta(bot, deps);
   registerRecordar(bot, deps);
+
+  // Conversación libre (responde a cualquier mensaje sin comando)
+  registerChat(bot, deps);
 
   // Manejo global de errores
   bot.catch((err) => {

@@ -54,7 +54,8 @@ export class LLMClient {
       temperature: opts.temperature ?? 0.3,
       max_tokens: opts.maxTokens ?? 1500,
     });
-    return res.choices[0]?.message?.content?.trim() ?? '';
+    const raw = res.choices[0]?.message?.content?.trim() ?? '';
+    return stripReasoning(raw);
   }
 
   /** Pide JSON y lo parsea con tolerancia a fences markdown. */
@@ -93,4 +94,20 @@ export function parseJSON<T>(raw: string): T {
   const end = cleaned.lastIndexOf('}');
   if (start >= 0 && end > start) cleaned = cleaned.slice(start, end + 1);
   return JSON.parse(cleaned) as T;
+}
+
+/**
+ * Elimina bloques de razonamiento (chain-of-thought) que algunos modelos
+ * emiten antes de la respuesta real (ej. <think>...</think> de Qwen 3.x).
+ * Deja solo el texto visible para el usuario.
+ */
+export function stripReasoning(text: string): string {
+  let out = text;
+  // <think>...</think> y <thinking>...</thinking>
+  out = out.replace(/<think(?:ing)?[\s\S]*?<\/(?:think|thinking)>/gi, '');
+  // zero-width spaces (artefactos de algunos modelos)
+  out = out.replace(/\u200b/g, '');
+  // colapsa líneas en blanco excesivas
+  out = out.replace(/\n{3,}/g, '\n\n');
+  return out.trim();
 }
