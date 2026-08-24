@@ -11,8 +11,8 @@ interface ProviderDefaults {
 export const LLM_PROVIDERS: Record<LLMProvider, ProviderDefaults> = {
   groq: {
     baseURL: 'https://api.groq.com/openai/v1',
-    model: 'qwen/qwen3.6-27b',
-    fastModel: 'qwen/qwen3.6-27b',
+    model: 'openai/gpt-oss-120b',
+    fastModel: 'openai/gpt-oss-120b',
     smartModel: 'openai/gpt-oss-120b',
   },
   deepseek: {

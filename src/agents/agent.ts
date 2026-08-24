@@ -36,8 +36,12 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
     return 'Perdón, todavía no tengo el LLM configurado.';
   }
 
+  // Memoria de contexto: últimas conversaciones (si hay Supabase, persiste)
+  const history = await deps.memory.getRecentConversations(chatId, 8);
+
   const messages: MessageParam[] = [
     { role: 'system', content: KUMPA_SYSTEM_PROMPT + '\n\n' + AGENT_INSTRUCTIONS },
+    ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
     { role: 'user', content: userText },
   ];
 
@@ -52,13 +56,13 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
           tools: TOOLS as Tool[],
           tool_choice: 'auto',
           temperature: 0.3,
-          max_tokens: 1200,
+          max_tokens: 2500,
         })
       : await deps.llm.client.chat.completions.create({
           model: deps.llm.settings.model,
           messages,
           temperature: 0.3,
-          max_tokens: 1200,
+          max_tokens: 2500,
         });
 
     const msg = res.choices[0]?.message;

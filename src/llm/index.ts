@@ -103,8 +103,10 @@ export function parseJSON<T>(raw: string): T {
  */
 export function stripReasoning(text: string): string {
   let out = text;
-  // <think>...</think> y <thinking>...</thinking>
+  // <think>...</think> y <thinking>...</thinking> (cerrados)
   out = out.replace(/<think(?:ing)?[\s\S]*?<\/(?:think|thinking)>/gi, '');
+  // bloque sin cerrar: <think ... hasta el final
+  out = out.replace(/<think(?:ing)?[\s\S]*$/gi, '');
   // zero-width spaces (artefactos de algunos modelos)
   out = out.replace(/\u200b/g, '');
   // colapsa líneas en blanco excesivas
