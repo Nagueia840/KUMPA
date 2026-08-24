@@ -31,6 +31,11 @@ const envSchema = z.object({
   LLM_FAST_MODEL: z.string().default(''),
   LLM_SMART_MODEL: z.string().default(''),
 
+  // ── Embeddings (memoria semántica; OpenAI text-embedding-3-small por defecto)
+  EMBEDDING_API_KEY: z.string().default(''),
+  EMBEDDING_BASE_URL: z.string().url().optional(),
+  EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+
   // ── Fuentes de datos ─────────────────────────────────────
   BITGET_API_KEY: z.string().default(''),
   BITGET_SECRET_KEY: z.string().default(''),

@@ -12,6 +12,7 @@ import { registerPlan } from './commands/plan.js';
 import { registerThesis } from './commands/thesis.js';
 import { registerReview } from './commands/review.js';
 import { registerAlerta } from './commands/alerta.js';
+import { registerRecordar } from './commands/recordar.js';
 import type { Deps } from '../deps.js';
 
 /** Crea y configura la instancia del bot de Telegram. */
@@ -35,6 +36,7 @@ export function createBot(deps: Deps): Bot {
   registerThesis(bot, deps);
   registerReview(bot, deps);
   registerAlerta(bot, deps);
+  registerRecordar(bot, deps);
 
   // Manejo global de errores
   bot.catch((err) => {

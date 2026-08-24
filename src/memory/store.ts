@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadEnv } from '../config/env.js';
+import { toVectorLiteral, type EmbeddingClient } from '../llm/embed.js';
 import type {
   AlertRule,
   AlertType,
@@ -21,15 +22,31 @@ interface AlertRow {
   last_triggered_at: string | null;
 }
 
+export interface InsightHit {
+  title: string;
+  summary: string;
+  judgment?: string;
+  similarity?: number;
+}
+
+export interface LearningHit {
+  topic: string;
+  lesson: string;
+  similarity?: number;
+}
+
 /**
  * Memoria persistente en Supabase con fallback silencioso a "sin memoria"
  * (o en-memoria para alertas) cuando Supabase no está configurado.
+ * Si hay embedder, guarda embeddings y habilita búsqueda semántica.
  */
 export class MemoryStore {
   private readonly supabase: SupabaseClient | null;
+  private readonly embedder: EmbeddingClient | null;
   private readonly alerts: Map<string, AlertRule> = new Map();
 
-  constructor() {
+  constructor(embedder: EmbeddingClient | null = null) {
+    this.embedder = embedder;
     const env = loadEnv();
     const key = env.SUPABASE_SERVICE_ROLE_KEY ?? env.SUPABASE_ANON_KEY;
     this.supabase = env.SUPABASE_URL && key ? createClient(env.SUPABASE_URL, key) : null;
@@ -37,6 +54,21 @@ export class MemoryStore {
 
   get enabled(): boolean {
     return this.supabase !== null;
+  }
+
+  get semanticEnabled(): boolean {
+    return this.supabase !== null && this.embedder !== null;
+  }
+
+  private async embed(text: string): Promise<number[] | null> {
+    if (!this.embedder) return null;
+    try {
+      const v = await this.embedder.embed(text);
+      return v.length > 0 ? v : null;
+    } catch (err) {
+      console.warn('[memory] embedding falló:', err instanceof Error ? err.message : err);
+      return null;
+    }
   }
 
   async saveConversation(chatId: number, role: ChatRole, content: string): Promise<void> {
@@ -63,6 +95,7 @@ export class MemoryStore {
 
   async saveInsight(chatId: number, insight: Insight): Promise<void> {
     if (!this.supabase) return;
+    const embedding = await this.embed(insight.summary);
     const { error } = await this.supabase.from('insights').insert({
       chat_id: chatId,
       title: insight.title,
@@ -71,6 +104,7 @@ export class MemoryStore {
       confidence: insight.confidence,
       sources: insight.sources,
       data_points: insight.dataPoints,
+      ...(embedding ? { embedding: toVectorLiteral(embedding) } : {}),
     });
     if (error) console.warn('[memory] saveInsight:', error.message);
   }
@@ -94,6 +128,7 @@ export class MemoryStore {
 
   async saveLearning(learning: Learning): Promise<void> {
     if (!this.supabase) return;
+    const embedding = await this.embed(learning.lesson);
     const { error } = await this.supabase.from('learnings').insert({
       chat_id: learning.chatId,
       topic: learning.topic,
@@ -101,6 +136,7 @@ export class MemoryStore {
       outcome: learning.outcome,
       lesson: learning.lesson,
       tags: learning.tags,
+      ...(embedding ? { embedding: toVectorLiteral(embedding) } : {}),
     });
     if (error) console.warn('[memory] saveLearning:', error.message);
   }
@@ -125,6 +161,54 @@ export class MemoryStore {
         createdAt: Date.parse(r.created_at),
       }),
     );
+  }
+
+  /** Búsqueda semántica de insights (con fallback a keyword). */
+  async searchInsights(chatId: number, query: string, limit = 5): Promise<InsightHit[]> {
+    if (!this.supabase) return [];
+    const embedding = await this.embed(query);
+    if (embedding) {
+      const { data, error } = await this.supabase.rpc('match_insights', {
+        query_embedding: toVectorLiteral(embedding),
+        match_count: limit,
+        p_chat_id: chatId,
+      });
+      if (!error && data) {
+        return (data as InsightHit[]).filter((d) => (d.similarity ?? 1) > 0.3);
+      }
+    }
+    const { data, error } = await this.supabase
+      .from('insights')
+      .select('title, summary, judgment')
+      .eq('chat_id', chatId)
+      .ilike('summary', `%${query}%`)
+      .limit(limit);
+    if (error || !data) return [];
+    return data as InsightHit[];
+  }
+
+  /** Búsqueda semántica de lecciones (con fallback a keyword). */
+  async searchLearnings(chatId: number, query: string, limit = 5): Promise<LearningHit[]> {
+    if (!this.supabase) return [];
+    const embedding = await this.embed(query);
+    if (embedding) {
+      const { data, error } = await this.supabase.rpc('match_learnings', {
+        query_embedding: toVectorLiteral(embedding),
+        match_count: limit,
+        p_chat_id: chatId,
+      });
+      if (!error && data) {
+        return (data as LearningHit[]).filter((d) => (d.similarity ?? 1) > 0.3);
+      }
+    }
+    const { data, error } = await this.supabase
+      .from('learnings')
+      .select('topic, lesson')
+      .eq('chat_id', chatId)
+      .ilike('lesson', `%${query}%`)
+      .limit(limit);
+    if (error || !data) return [];
+    return data as LearningHit[];
   }
 
   // ── Alertas ──────────────────────────────────────────────

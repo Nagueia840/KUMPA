@@ -106,3 +106,49 @@ export async function updateLLMSetting(key: string, value: string): Promise<void
   if (error) throw new Error(`No se pudo actualizar ${key}: ${error.message}`);
   cached = null; // invalida caché para que el próximo getLLMSettings relea
 }
+
+/** Configuración resuelta de embeddings (memoria semántica). */
+export interface EmbeddingSettings {
+  apiKey: string;
+  baseURL: string;
+  model: string;
+}
+
+let cachedEmbedding: EmbeddingSettings | null = null;
+
+/**
+ * Resuelve la configuración de embeddings (env + app_settings de Supabase).
+ * Por defecto OpenAI text-embedding-3-small (dim 1536).
+ */
+export async function getEmbeddingSettings(forceRefresh = false): Promise<EmbeddingSettings> {
+  if (cachedEmbedding && !forceRefresh) return cachedEmbedding;
+
+  const env = loadEnv();
+  const settings: EmbeddingSettings = {
+    apiKey: env.EMBEDDING_API_KEY,
+    baseURL: env.EMBEDDING_BASE_URL ?? 'https://api.openai.com/v1',
+    model: env.EMBEDDING_MODEL,
+  };
+
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY ?? env.SUPABASE_ANON_KEY;
+  if (env.SUPABASE_URL && supabaseKey) {
+    try {
+      const supabase = createClient(env.SUPABASE_URL, supabaseKey);
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('key, value')
+        .in('key', ['embedding_api_key', 'embedding_base_url', 'embedding_model']);
+      if (!error && data && data.length > 0) {
+        const map = new Map<string, string>(data.map((row) => [row.key, String(row.value)]));
+        settings.apiKey = map.get('embedding_api_key') ?? settings.apiKey;
+        settings.baseURL = map.get('embedding_base_url') ?? settings.baseURL;
+        settings.model = map.get('embedding_model') ?? settings.model;
+      }
+    } catch (err) {
+      console.warn('[settings] Supabase no disponible para embeddings:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  cachedEmbedding = settings;
+  return settings;
+}
