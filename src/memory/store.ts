@@ -1,13 +1,33 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadEnv } from '../config/env.js';
-import type { ChatMessage, ChatRole, Insight, Learning, TradePlan } from '../types/index.js';
+import type {
+  AlertRule,
+  AlertType,
+  ChatMessage,
+  ChatRole,
+  Insight,
+  Learning,
+  TradePlan,
+} from '../types/index.js';
+
+interface AlertRow {
+  id: string;
+  chat_id: number;
+  type: AlertType;
+  symbol: string;
+  threshold: number;
+  active: boolean;
+  created_at: string;
+  last_triggered_at: string | null;
+}
 
 /**
  * Memoria persistente en Supabase con fallback silencioso a "sin memoria"
- * cuando Supabase no está configurado (útil en desarrollo).
+ * (o en-memoria para alertas) cuando Supabase no está configurado.
  */
 export class MemoryStore {
   private readonly supabase: SupabaseClient | null;
+  private readonly alerts: Map<string, AlertRule> = new Map();
 
   constructor() {
     const env = loadEnv();
@@ -105,5 +125,59 @@ export class MemoryStore {
         createdAt: Date.parse(r.created_at),
       }),
     );
+  }
+
+  // ── Alertas ──────────────────────────────────────────────
+
+  async saveAlert(rule: AlertRule): Promise<void> {
+    if (this.supabase) {
+      const { error } = await this.supabase.from('alerts').insert({
+        chat_id: rule.chatId,
+        type: rule.type,
+        symbol: rule.symbol,
+        threshold: rule.threshold,
+        active: true,
+      });
+      if (error) console.warn('[memory] saveAlert:', error.message);
+      return;
+    }
+    const id = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.alerts.set(id, { ...rule, id });
+  }
+
+  async getActiveAlerts(chatId?: number): Promise<AlertRule[]> {
+    if (this.supabase) {
+      const base = this.supabase.from('alerts').select('*').eq('active', true);
+      const filtered = chatId !== undefined ? base.eq('chat_id', chatId) : base;
+      const { data, error } = await filtered;
+      if (error || !data) return [];
+      return (data as AlertRow[]).map((r) => ({
+        id: r.id,
+        chatId: r.chat_id,
+        type: r.type,
+        symbol: r.symbol,
+        threshold: r.threshold,
+        active: r.active,
+        createdAt: Date.parse(r.created_at),
+        lastTriggeredAt: r.last_triggered_at ? Date.parse(r.last_triggered_at) : undefined,
+      }));
+    }
+    return [...this.alerts.values()].filter(
+      (a) => a.active && (chatId === undefined || a.chatId === chatId),
+    );
+  }
+
+  async markAlertTriggered(id?: string): Promise<void> {
+    if (!id) return;
+    if (this.supabase) {
+      const { error } = await this.supabase
+        .from('alerts')
+        .update({ last_triggered_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) console.warn('[memory] markAlertTriggered:', error.message);
+      return;
+    }
+    const a = this.alerts.get(id);
+    if (a) a.lastTriggeredAt = Date.now();
   }
 }

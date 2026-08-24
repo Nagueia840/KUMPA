@@ -11,6 +11,7 @@ import { registerManiana } from './commands/maniana.js';
 import { registerPlan } from './commands/plan.js';
 import { registerThesis } from './commands/thesis.js';
 import { registerReview } from './commands/review.js';
+import { registerAlerta } from './commands/alerta.js';
 import type { Deps } from '../deps.js';
 
 /** Crea y configura la instancia del bot de Telegram. */
@@ -33,6 +34,7 @@ export function createBot(deps: Deps): Bot {
   registerPlan(bot, deps);
   registerThesis(bot, deps);
   registerReview(bot, deps);
+  registerAlerta(bot, deps);
 
   // Manejo global de errores
   bot.catch((err) => {

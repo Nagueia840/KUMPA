@@ -1,6 +1,7 @@
 import { loadEnv } from './config/env.js';
 import { createBot } from './bot/index.js';
 import { createDeps } from './deps.js';
+import { startAlertLoop } from './scheduler/index.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -8,6 +9,7 @@ async function main(): Promise<void> {
   const bot = createBot(deps);
 
   if (env.BOT_MODE === 'polling') {
+    startAlertLoop(deps, bot);
     console.info('[kumpa] Arrancando en modo polling…');
     await bot.start({
       onStart: (info) => console.info(`[kumpa] Bot activo como @${info.username}`),

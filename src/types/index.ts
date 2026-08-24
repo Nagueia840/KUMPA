@@ -64,8 +64,9 @@ export interface TradePlan {
 export type AlertType =
   | 'funding_above'
   | 'funding_below'
+  | 'price_above'
+  | 'price_below'
   | 'oi_delta_above'
-  | 'price_cross'
   | 'whale_move'
   | 'earnings_surprise';
 
