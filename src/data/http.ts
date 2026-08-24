@@ -8,9 +8,9 @@ export class HttpError extends Error {
   }
 }
 
-/** GET JSON con manejo de errores HTTP. */
-export async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+/** GET JSON con manejo de errores HTTP y opción de headers/init personalizados. */
+export async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
   if (!res.ok) {
     throw new HttpError(res.status, `HTTP ${res.status} para ${url}`);
   }
