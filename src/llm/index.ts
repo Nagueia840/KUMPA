@@ -14,7 +14,7 @@ export interface ChatOptions {
 
 /** Cliente LLM OpenAI-compatible (Groq, DeepSeek, OpenRouter, custom). */
 export class LLMClient {
-  private client: OpenAI;
+  readonly client: OpenAI;
   readonly settings: LLMSettings;
 
   constructor(settings: LLMSettings) {
