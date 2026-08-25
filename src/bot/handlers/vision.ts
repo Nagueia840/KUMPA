@@ -25,8 +25,8 @@ export function registerVision(bot: Bot, deps: Deps): void {
     await ctx.reply('🔍 Mirando la imagen…');
 
     const prompt = caption
-      ? `El usuario dice: "${caption}". Identificá y describí lo que hay en la imagen (objeto, pieza, componente, aparato) y respondé a su pedido.`
-      : 'Identificá y describí lo que hay en la imagen (objeto, pieza, componente, aparato). Si podés, mencioná características técnicas o para qué sirve.';
+      ? `El usuario dice: "${caption}". Mirá la imagen y respondé a lo que pide de forma natural.`
+      : 'Describí qué hay en la imagen de forma natural. Si es algo identificable (animal, objeto, dispositivo, pieza), decí qué es, para qué sirve y cualquier característica que veas.';
 
     // De la más grande a la más chica (hasta 3 tamaños)
     const sorted = [...photos].sort((a, b) => (b.file_size ?? 0) - (a.file_size ?? 0));
