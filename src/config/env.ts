@@ -61,7 +61,7 @@ const envSchema = z.object({
   // ── Visión (imágenes; requiere provider multimodal: OpenRouter/Gemini/OpenAI)
   VISION_API_KEY: z.string().default(''),
   VISION_BASE_URL: optionalUrl,
-  VISION_MODEL: z.string().default('gemini-3.6-flash'),
+  VISION_MODEL: z.string().default('gemini-3.7-flash'),
   WHISPER_MODEL: z.string().default('whisper-large-v3-turbo'),
 
   // ── Redis (BullMQ, opcional en MVP) ──────────────────────
