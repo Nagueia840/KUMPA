@@ -3,6 +3,7 @@ import type { Deps } from '../../deps.js';
 import { loadEnv } from '../../config/env.js';
 import { handleMessage } from '../../agents/agent.js';
 import { replyLong } from '../../utils/telegram.js';
+import { normalizeTranscript } from '../../utils/transcript.js';
 
 /**
  * Voz: transcribe mensajes de audio/notas de voz con Whisper (Groq)
@@ -34,7 +35,7 @@ export function registerVoice(bot: Bot, deps: Deps): void {
       const blob = new Blob([await audioRes.arrayBuffer()], { type: 'audio/ogg' });
       const fileObj = new File([blob], 'voice.ogg', { type: 'audio/ogg' });
 
-      const text = await deps.llm.transcribeAudio(fileObj, loadEnv().WHISPER_MODEL);
+      const text = normalizeTranscript(await deps.llm.transcribeAudio(fileObj, loadEnv().WHISPER_MODEL));
 
       if (!text.trim()) {
         await ctx.reply('No entendí nada del audio 😅. ¿Podés repetirlo o escribirme?');
