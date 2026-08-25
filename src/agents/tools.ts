@@ -1,5 +1,6 @@
 import type { Deps } from '../deps.js';
-import { buildAggregatedScan } from '../data/snapshot.js';
+import { buildAggregatedScan, toPerpPair } from '../data/snapshot.js';
+import { computeEMA, computeRSI, computeSMA, computeVWAP, parseCandle } from '../data/indicators.js';
 import { weatherCodeDescription } from '../data/web/weather.js';
 import type { AlertRule } from '../types/index.js';
 
@@ -9,6 +10,7 @@ export type ToolName =
   | 'set_price_alert'
   | 'set_funding_alert'
   | 'get_onchain_data'
+  | 'get_technical_indicators'
   | 'web_search'
   | 'get_weather';
 
@@ -94,6 +96,26 @@ export const TOOLS = [
           kind: { type: 'string', enum: ['tvl', 'stablecoins', 'global'] },
         },
         required: ['kind'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_technical_indicators',
+      description:
+        'Obtiene indicadores técnicos de un activo: VWAP (semanal por defecto), media móvil simple 20, EMA 20 y RSI 14, calculados desde velas de Bitget. Usala cuando el usuario pida VWAP, medias móviles, RSI, análisis técnico o niveles.',
+      parameters: {
+        type: 'object',
+        properties: {
+          symbol: { type: 'string', description: 'Ticker: BTC, ETH, SOL...' },
+          timeframe: {
+            type: 'string',
+            enum: ['1h', '1d'],
+            description: 'Temporalidad de las velas (default 1d)',
+          },
+        },
+        required: ['symbol'],
       },
     },
   },
@@ -225,6 +247,36 @@ export async function executeTool(
         }
         return { error: 'No se pudo obtener el panorama global' };
       }
+    }
+    case 'get_technical_indicators': {
+      const symbol = String(args.symbol ?? 'BTC');
+      // Bitget usa granularidades en mayúscula (1H, 1D...)
+      const tfMap: Record<string, string> = {
+        '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m',
+        '1h': '1H', '4h': '4H', '6h': '6H', '12h': '12H',
+        '1d': '1D', '1w': '1W',
+      };
+      const timeframe = tfMap[String(args.timeframe ?? '1d').toLowerCase()] ?? '1D';
+      const raw = await deps.bitget.getCandles(toPerpPair(symbol), timeframe, { limit: 200 });
+      const candles = raw.map(parseCandle).sort((a, b) => a.time - b.time);
+      if (candles.length < 20) return { error: 'Velas insuficientes para indicadores' };
+      const closes = candles.map((c) => c.close);
+      // VWAP semanal: últimas 7 velas diarias (o 168 de 1H)
+      const vwapWindow = timeframe === '1H' ? candles.slice(-168) : candles.slice(-7);
+      const last = candles[candles.length - 1];
+      const scan = await buildAggregatedScan(symbol, deps);
+      return {
+        symbol: symbol.toUpperCase(),
+        timeframe,
+        price: scan.snapshot.price,
+        vwapWeekly: computeVWAP(vwapWindow),
+        ma20: computeSMA(closes, 20),
+        ema20: computeEMA(closes, 20),
+        rsi14: computeRSI(closes, 14),
+        weekHigh: vwapWindow.length ? Math.max(...vwapWindow.map((c) => c.high)) : undefined,
+        weekLow: vwapWindow.length ? Math.min(...vwapWindow.map((c) => c.low)) : undefined,
+        lastClose: last?.close,
+      };
     }
     case 'web_search': {
       if (!deps.exa) return { error: 'Búsqueda web no configurada (falta EXA_API_KEY)' };
