@@ -152,3 +152,19 @@ export async function getEmbeddingSettings(forceRefresh = false): Promise<Embedd
   cachedEmbedding = settings;
   return settings;
 }
+
+/** Configuración resuelta de visión (imágenes). */
+export interface VisionSettings {
+  apiKey: string;
+  baseURL: string;
+  model: string;
+}
+
+export async function getVisionSettings(): Promise<VisionSettings> {
+  const env = loadEnv();
+  return {
+    apiKey: env.VISION_API_KEY,
+    baseURL: env.VISION_BASE_URL ?? 'https://openrouter.ai/api/v1',
+    model: env.VISION_MODEL || 'google/gemini-2.0-flash-001',
+  };
+}

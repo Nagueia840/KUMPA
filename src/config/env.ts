@@ -54,6 +54,14 @@ const envSchema = z.object({
   FRED_API_KEY: z.string().default(''),
   CMC_API_KEY: z.string().default(''),
 
+  // ── Búsqueda web (Exa) ───────────────────────────────────
+  EXA_API_KEY: z.string().default(''),
+
+  // ── Visión (imágenes; requiere provider multimodal: OpenRouter/Gemini/OpenAI)
+  VISION_API_KEY: z.string().default(''),
+  VISION_BASE_URL: optionalUrl,
+  VISION_MODEL: z.string().default('google/gemini-2.0-flash-001'),
+
   // ── Redis (BullMQ, opcional en MVP) ──────────────────────
   UPSTASH_REDIS_URL: optionalUrl,
 });

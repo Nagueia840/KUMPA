@@ -14,6 +14,7 @@ import { registerReview } from './commands/review.js';
 import { registerAlerta } from './commands/alerta.js';
 import { registerRecordar } from './commands/recordar.js';
 import { registerChat } from './handlers/chat.js';
+import { registerVision } from './handlers/vision.js';
 import type { Deps } from '../deps.js';
 
 /** Crea y configura la instancia del bot de Telegram. */
@@ -41,6 +42,9 @@ export function createBot(deps: Deps): Bot {
 
   // Conversación libre (responde a cualquier mensaje sin comando)
   registerChat(bot, deps);
+
+  // Visión (imágenes)
+  registerVision(bot, deps);
 
   // Manejo global de errores
   bot.catch((err) => {

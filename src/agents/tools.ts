@@ -1,5 +1,6 @@
 import type { Deps } from '../deps.js';
 import { buildAggregatedScan } from '../data/snapshot.js';
+import { weatherCodeDescription } from '../data/web/weather.js';
 import type { AlertRule } from '../types/index.js';
 
 export type ToolName =
@@ -7,7 +8,9 @@ export type ToolName =
   | 'get_price'
   | 'set_price_alert'
   | 'set_funding_alert'
-  | 'get_onchain_data';
+  | 'get_onchain_data'
+  | 'web_search'
+  | 'get_weather';
 
 /** Definición de herramientas para function calling (compatible OpenAI/Groq). */
 export const TOOLS = [
@@ -16,7 +19,7 @@ export const TOOLS = [
     function: {
       name: 'get_market_snapshot',
       description:
-        'Obtiene precio, funding rate, open interest y basis anualizado de un cripto activo (datos cross-exchange Binance/Bybit). Usala cuando el usuario pida analizar, mirar o consultar un activo.',
+        'Obtiene precio, funding rate, open interest y basis anualizado de un cripto activo (fuente primaria Bitget, cross-check Binance/Bybit). Usala cuando el usuario pida analizar, mirar o consultar un activo.',
       parameters: {
         type: 'object',
         properties: {
@@ -67,7 +70,7 @@ export const TOOLS = [
     function: {
       name: 'set_funding_alert',
       description:
-        'Crea una alerta de funding rate para avisar cuando el funding cruce un umbral (en %). Usala cuando pida alertas de funding.',
+        'Crea una alerta de funding rate para avisar cuando el funding cruce un umbral (en %).',
       parameters: {
         type: 'object',
         properties: {
@@ -94,6 +97,31 @@ export const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description:
+        'Busca información general en internet: noticias, especificaciones técnicas de un aparato o componente, identificación de objetos, clima, cualquier cosa. Usala cuando el usuario pida buscar algo que no sea un dato de mercado.',
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string', description: 'Consulta de búsqueda' } },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_weather',
+      description: 'Obtiene el clima actual de una ciudad o lugar.',
+      parameters: {
+        type: 'object',
+        properties: { place: { type: 'string', description: 'Ciudad o lugar (ej Buenos Aires, CABA)' } },
+        required: ['place'],
+      },
+    },
+  },
 ];
 
 /** Ejecuta una herramienta con sus argumentos y devuelve el resultado. */
@@ -110,6 +138,7 @@ export async function executeTool(
       return {
         symbol: scan.symbol,
         pair: scan.pair,
+        source: 'Bitget (primario)',
         priceUsd: scan.snapshot.price,
         fundingBitgetPct: scan.context.bitgetFunding * 100,
         fundingBinancePct: scan.context.binanceFunding * 100,
@@ -126,7 +155,7 @@ export async function executeTool(
     case 'get_price': {
       const symbol = String(args.symbol ?? 'BTC');
       const scan = await buildAggregatedScan(symbol, deps);
-      return { symbol: scan.symbol, priceUsd: scan.snapshot.price };
+      return { symbol: scan.symbol, priceUsd: scan.snapshot.price, source: 'Bitget' };
     }
     case 'set_price_alert': {
       const symbol = String(args.symbol ?? 'BTC').toUpperCase();
@@ -153,7 +182,7 @@ export async function executeTool(
         chatId,
         type: direction === 'above' ? 'funding_above' : 'funding_below',
         symbol,
-        threshold: percent / 100, // % → decimal
+        threshold: percent / 100,
         active: true,
         createdAt: Date.now(),
       };
@@ -176,7 +205,6 @@ export async function executeTool(
         const usdc = stables.find((s) => s.symbol === 'USDC')?.circulating?.peggedUSD ?? 0;
         return { kind: 'stablecoins', usdtCirculatingUsd: usdt, usdcCirculatingUsd: usdc, count: stables.length };
       }
-      // global: CoinGecko primario, CoinMarketCap de respaldo
       try {
         const global = await deps.coinGecko.getGlobal();
         return {
@@ -197,6 +225,28 @@ export async function executeTool(
         }
         return { error: 'No se pudo obtener el panorama global' };
       }
+    }
+    case 'web_search': {
+      if (!deps.exa) return { error: 'Búsqueda web no configurada (falta EXA_API_KEY)' };
+      const results = await deps.exa.search(String(args.query ?? ''), 5);
+      return results.map((r) => ({
+        title: r.title,
+        url: r.url,
+        snippet: (r.text ?? '').slice(0, 500),
+      }));
+    }
+    case 'get_weather': {
+      const place = String(args.place ?? '');
+      const geo = await deps.weather.geocode(place);
+      if (!geo) return { error: `No encontré el lugar "${place}"` };
+      const w = await deps.weather.getCurrent(geo.latitude, geo.longitude);
+      return {
+        place: `${geo.name}${geo.admin1 ? ', ' + geo.admin1 : ''}${geo.country ? ', ' + geo.country : ''}`,
+        temperatureC: w.temperature,
+        description: weatherCodeDescription(w.weatherCode),
+        windKmh: w.windSpeed,
+        humidityPct: w.relativeHumidity,
+      };
     }
     default:
       return { error: `Herramienta desconocida: ${name}` };

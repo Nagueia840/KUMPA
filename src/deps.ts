@@ -9,15 +9,19 @@ import { FlipsideClient } from './data/onchain/flipside.js';
 import { createDefaultRpcClient, type EthAddress, type RpcClient } from './data/onchain/rpc.js';
 import { FredClient } from './data/macro/fred.js';
 import { SeekingAlphaClient } from './data/equities/seekingalpha.js';
+import { ExaClient } from './data/web/exa.js';
+import { OpenMeteoClient } from './data/web/weather.js';
 import { LLMClient } from './llm/index.js';
 import { EmbeddingClient } from './llm/embed.js';
-import { getEmbeddingSettings, getLLMSettings } from './config/settings.js';
+import { VisionClient } from './llm/vision.js';
+import { getEmbeddingSettings, getLLMSettings, getVisionSettings } from './config/settings.js';
 import { loadEnv } from './config/env.js';
 import { MemoryStore } from './memory/store.js';
 
 /** Dependencias compartidas inyectadas en los comandos del bot. */
 export interface Deps {
-  llm: LLMClient | null; // null si no hay LLM_API_KEY (modo datos sin análisis)
+  llm: LLMClient | null; // null si no hay LLM_API_KEY
+  vision: VisionClient | null; // null si no hay VISION_API_KEY
   memory: MemoryStore;
   binance: BinanceFuturesClient;
   bybit: BybitClient;
@@ -30,6 +34,8 @@ export interface Deps {
   flipside: FlipsideClient | null;
   fred: FredClient | null;
   seekingAlpha: SeekingAlphaClient;
+  exa: ExaClient | null;
+  weather: OpenMeteoClient;
 }
 
 async function createEmbedder(): Promise<EmbeddingClient | null> {
@@ -43,10 +49,25 @@ async function createEmbedder(): Promise<EmbeddingClient | null> {
   }
 }
 
+async function createVision(): Promise<VisionClient | null> {
+  try {
+    const settings = await getVisionSettings();
+    if (!settings.apiKey) return null;
+    return new VisionClient(settings);
+  } catch (err) {
+    console.warn('[deps] Sin visión (falta VISION_API_KEY):', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 /** Construye el contenedor de dependencias a partir de la configuración. */
 export async function createDeps(): Promise<Deps> {
   const env = loadEnv();
-  const [llmSettings, embedder] = await Promise.all([getLLMSettings(), createEmbedder()]);
+  const [llmSettings, embedder, vision] = await Promise.all([
+    getLLMSettings(),
+    createEmbedder(),
+    createVision(),
+  ]);
 
   let llm: LLMClient | null = null;
   if (llmSettings.apiKey) {
@@ -57,6 +78,7 @@ export async function createDeps(): Promise<Deps> {
 
   return {
     llm,
+    vision,
     memory: new MemoryStore(embedder),
     binance: new BinanceFuturesClient(),
     bybit: new BybitClient(),
@@ -69,6 +91,8 @@ export async function createDeps(): Promise<Deps> {
     flipside: env.FLIPSIDE_API_KEY ? new FlipsideClient(env.FLIPSIDE_API_KEY) : null,
     fred: env.FRED_API_KEY ? new FredClient(env.FRED_API_KEY) : null,
     seekingAlpha: new SeekingAlphaClient(),
+    exa: env.EXA_API_KEY ? new ExaClient(env.EXA_API_KEY) : null,
+    weather: new OpenMeteoClient(),
   };
 }
 
