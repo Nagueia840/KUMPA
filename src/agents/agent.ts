@@ -3,6 +3,7 @@ import type { Deps } from '../deps.js';
 import { KUMPA_SYSTEM_PROMPT } from '../config/personality.js';
 import { stripReasoning } from '../llm/index.js';
 import { executeTool, TOOLS, type ToolName } from './tools.js';
+import { detectTicker } from '../utils/tickers.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('agent');
@@ -17,6 +18,7 @@ Sos un agente conversacional con acceso a herramientas. Podés:
 - Consultar datos on-chain/DeFi (TVL, stablecoins) y el panorama global.
 
 REGLAS:
+- REGLA DE ORO: para PRECIO, funding, open interest, basis o cualquier dato de mercado de un activo, es OBLIGATORIO usar get_market_snapshot (o get_price). NUNCA respondas datos de mercado desde tu memoria de entrenamiento: pueden estar viejos y es humo.
 - Si el usuario pide datos o análisis de un activo, usá get_market_snapshot y después respondé en lenguaje natural con lo más relevante (separá hechos de interpretación).
 - Si pide una alerta (ej "avisame si BTC supera 80000"), usá set_price_alert y confirmale en criollo.
 - Si pregunta por TVL, stablecoins o el mercado en general, usá get_onchain_data.
@@ -42,6 +44,10 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
   // Memoria de contexto: últimas conversaciones (si hay Supabase, persiste)
   const history = await deps.memory.getRecentConversations(chatId, 8);
 
+  // Si el mensaje menciona un ticker → forzar uso de herramientas (datos reales,
+  // nunca responder de memoria)
+  const hasTicker = detectTicker(userText) !== null;
+
   const messages: MessageParam[] = [
     { role: 'system', content: KUMPA_SYSTEM_PROMPT + '\n\n' + AGENT_INSTRUCTIONS },
     ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
@@ -59,7 +65,8 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
             model: deps.llm.settings.model,
             messages,
             tools: TOOLS as Tool[],
-            tool_choice: 'auto',
+            // Con ticker → 'required' fuerza a usar una herramienta (nunca memoria)
+            tool_choice: hasTicker ? 'required' : 'auto',
             temperature: 0.3,
             max_tokens: 2500,
           })
