@@ -74,7 +74,13 @@ El loop en proceso (`setInterval`) NO corre en serverless (Vercel duerme las fun
 Para alertas y briefing automático usá **Vercel Cron**:
 
 1. En Vercel: **Settings → Cron Jobs** → **Create**.
-2. Path: `/api/cron` · Schedule: `*/5 * * * *` (cada 5 min).
+2. Path: `/api/cron` · Schedule: `0 * * * *` (cada 1 hora — límite del plan Hobby).
+
+> ⚠️ Plan Hobby: Vercel limita los cron jobs a **2** y con **intervalo mínimo de 1 hora**;
+> un schedule de 5 min (`*/5`) puede rechazar el deploy. Para volver a 5 min:
+> - **Pro** (US$20/mes): cambiá el schedule a `*/5 * * * *`, o
+> - **gratis**: [cron-job.org](https://cron-job.org) → cada 5 min → GET `https://TU_APP.vercel.app/api/cron`
+>   (y borrá el cron de Vercel).
 
 (Este endpoint `/api/cron` se puede agregar para disparar el chequeo de alertas;
 quedó preparado el módulo `src/scheduler` para reutilizarse.)

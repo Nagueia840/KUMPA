@@ -1,16 +1,16 @@
 {
   "functions": {
     "api/webhook.ts": {
-      "maxDuration": 60
+      "maxDuration": 10
     },
     "api/cron.ts": {
-      "maxDuration": 60
+      "maxDuration": 10
     }
   },
   "crons": [
     {
       "path": "/api/cron",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }
