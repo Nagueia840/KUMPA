@@ -2,6 +2,7 @@ import { BitgetClient, createBitgetClient } from './data/bitget/index.js';
 import { BinanceFuturesClient } from './data/market/binance.js';
 import { BybitClient } from './data/market/bybit.js';
 import { CoinGeckoClient } from './data/market/coingecko.js';
+import { CoinMarketCapClient } from './data/market/coinmarketcap.js';
 import { DefiLlamaClient } from './data/onchain/defillama.js';
 import { DuneClient } from './data/onchain/dune.js';
 import { FlipsideClient } from './data/onchain/flipside.js';
@@ -21,6 +22,7 @@ export interface Deps {
   binance: BinanceFuturesClient;
   bybit: BybitClient;
   coinGecko: CoinGeckoClient;
+  cmc: CoinMarketCapClient | null;
   defiLlama: DefiLlamaClient;
   bitget: BitgetClient;
   rpc: RpcClient;
@@ -59,6 +61,7 @@ export async function createDeps(): Promise<Deps> {
     binance: new BinanceFuturesClient(),
     bybit: new BybitClient(),
     coinGecko: new CoinGeckoClient(),
+    cmc: env.CMC_API_KEY ? new CoinMarketCapClient(env.CMC_API_KEY) : null,
     defiLlama: new DefiLlamaClient(),
     bitget: createBitgetClient(),
     rpc: createDefaultRpcClient(),

@@ -114,14 +114,11 @@ export class BitgetClient {
     symbol: string,
     productType: ProductType = 'USDT-FUTURES',
   ): Promise<OpenInterest> {
-    const data = await this.request<OpenInterest[]>({
+    return this.request<OpenInterest>({
       method: 'GET',
       path: '/api/v2/mix/market/open-interest',
       query: { symbol, productType },
     });
-    const oi = data[0];
-    if (!oi) throw new BitgetError('NO_DATA', `Sin open interest para ${symbol}`);
-    return oi;
   }
 
   async getCandles(

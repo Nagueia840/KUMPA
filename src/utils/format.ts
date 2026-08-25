@@ -12,12 +12,12 @@ export function formatScan(scan: AggregatedScan): string {
     `📊 <b>${scan.symbol}</b> (${scan.pair})`,
     '',
     `• Precio mark: $${s.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-    `• Funding Binance: ${pct(c.binanceFunding)} (7d avg ${pct(s.fundingRate7dAvg)})`,
-    `• Funding Bybit: ${pct(c.bybitFunding)}`,
-    `• Spread funding (BN−BY): ${c.fundingSpreadBps.toFixed(2)} bps`,
+    `• Funding Bitget: ${pct(c.bitgetFunding)} (7d avg ${pct(s.fundingRate7dAvg)})`,
+    `• Funding Binance: ${pct(c.binanceFunding)} · Bybit: ${pct(c.bybitFunding)}`,
+    `• Spread funding (BG−BY): ${c.fundingSpreadBps.toFixed(2)} bps`,
     `• Basis anualizado (aprox): ${(s.basisAnnualized * 100).toFixed(2)}%`,
-    `• OI Binance: ${c.binanceOI.toLocaleString('en-US')} | Bybit: ${c.bybitOI.toLocaleString('en-US')}`,
-    `• Vol 24h Bybit: $${s.volume24h.toLocaleString('en-US')}`,
+    `• OI Bitget: ${c.bitgetOI.toLocaleString('en-US')} | Bybit: ${c.bybitOI.toLocaleString('en-US')}`,
+    `• Vol 24h Bitget: $${s.volume24h.toLocaleString('en-US')}`,
     `• Market cap global: $${(c.globalCapUsd / 1e12).toFixed(2)}T · BTC dom: ${c.btcDominancePct.toFixed(1)}%`,
   ].join('\n');
 }
@@ -97,7 +97,7 @@ export function formatBriefingData(b: Briefing): string {
     const s = t.snapshot;
     const c = t.context;
     lines.push(
-      `${s.symbol}: $${s.price.toLocaleString('en-US', { maximumFractionDigits: 2 })} · funding ${pct(c.binanceFunding)} · spread ${c.fundingSpreadBps.toFixed(2)} bps`,
+      `${s.symbol}: $${s.price.toLocaleString('en-US', { maximumFractionDigits: 2 })} · funding ${pct(c.bitgetFunding)} · spread ${c.fundingSpreadBps.toFixed(2)} bps`,
     );
   }
   return lines.join('\n');

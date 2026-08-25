@@ -3,6 +3,7 @@ import type { Deps } from '../../deps.js';
 import { buildAggregatedScan } from '../../data/snapshot.js';
 import { analyzePlan } from '../../agents/analyst.js';
 import { formatPlan, formatScan } from '../../utils/format.js';
+import { replyLong } from '../../utils/telegram.js';
 
 export function registerPlan(bot: Bot, deps: Deps): void {
   bot.command('plan', async (ctx) => {
@@ -29,7 +30,7 @@ export function registerPlan(bot: Bot, deps: Deps): void {
       const scan = await buildAggregatedScan(symbol, deps);
       const plan = await analyzePlan(deps.llm, scan, setup);
       await deps.memory.saveTradePlan(chatId, plan);
-      await ctx.reply([formatScan(scan), '', formatPlan(plan)].join('\n'), { parse_mode: 'HTML' });
+      await replyLong(ctx, [formatScan(scan), '', formatPlan(plan)].join('\n'), { parse_mode: 'HTML' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await ctx.reply(`⚠️ No pude armar el plan: ${msg}`);

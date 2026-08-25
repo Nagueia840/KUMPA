@@ -1,6 +1,7 @@
 import type { Bot } from 'grammy';
 import type { Deps } from '../../deps.js';
 import { handleMessage } from '../../agents/agent.js';
+import { replyLong } from '../../utils/telegram.js';
 
 /**
  * Conversación libre: todo mensaje sin comando pasa por el agente (function calling).
@@ -19,7 +20,7 @@ export function registerChat(bot: Bot, deps: Deps): void {
       if (reply) {
         await deps.memory.saveConversation(chatId, 'user', text);
         await deps.memory.saveConversation(chatId, 'assistant', reply);
-        await ctx.reply(reply);
+        await replyLong(ctx, reply);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

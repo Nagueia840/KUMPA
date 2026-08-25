@@ -52,6 +52,7 @@ const envSchema = z.object({
   GLASSNODE_API_KEY: z.string().default(''),
   ALCHEMY_API_KEY: z.string().default(''),
   FRED_API_KEY: z.string().default(''),
+  CMC_API_KEY: z.string().default(''),
 
   // ── Redis (BullMQ, opcional en MVP) ──────────────────────
   UPSTASH_REDIS_URL: optionalUrl,

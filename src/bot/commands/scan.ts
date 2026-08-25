@@ -3,6 +3,7 @@ import type { Deps } from '../../deps.js';
 import { buildAggregatedScan } from '../../data/snapshot.js';
 import { analyzeScan } from '../../agents/analyst.js';
 import { formatInsight, formatScan } from '../../utils/format.js';
+import { replyLong } from '../../utils/telegram.js';
 
 export function registerScan(bot: Bot, deps: Deps): void {
   bot.command('scan', async (ctx) => {
@@ -20,7 +21,7 @@ export function registerScan(bot: Bot, deps: Deps): void {
         const insight = await analyzeScan(deps.llm, scan);
         await deps.memory.saveConversation(chatId, 'assistant', insight.summary);
         await deps.memory.saveInsight(chatId, insight);
-        await ctx.reply([formatScan(scan), '', formatInsight(insight)].join('\n'), {
+        await replyLong(ctx, [formatScan(scan), '', formatInsight(insight)].join('\n'), {
           parse_mode: 'HTML',
         });
       } else {

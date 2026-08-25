@@ -111,10 +111,11 @@ export async function executeTool(
         symbol: scan.symbol,
         pair: scan.pair,
         priceUsd: scan.snapshot.price,
+        fundingBitgetPct: scan.context.bitgetFunding * 100,
         fundingBinancePct: scan.context.binanceFunding * 100,
         fundingBybitPct: scan.context.bybitFunding * 100,
         fundingSpreadBps: scan.context.fundingSpreadBps,
-        openInterestBinance: scan.context.binanceOI,
+        openInterestBitget: scan.context.bitgetOI,
         openInterestBybit: scan.context.bybitOI,
         basisAnnualizedPct: scan.snapshot.basisAnnualized * 100,
         volume24hUsd: scan.snapshot.volume24h,
@@ -175,12 +176,27 @@ export async function executeTool(
         const usdc = stables.find((s) => s.symbol === 'USDC')?.circulating?.peggedUSD ?? 0;
         return { kind: 'stablecoins', usdtCirculatingUsd: usdt, usdcCirculatingUsd: usdc, count: stables.length };
       }
-      const global = await deps.coinGecko.getGlobal();
-      return {
-        kind: 'global',
-        marketCapUsd: global.data.total_market_cap.usd ?? 0,
-        btcDominancePct: global.data.market_cap_percentage.btc ?? 0,
-      };
+      // global: CoinGecko primario, CoinMarketCap de respaldo
+      try {
+        const global = await deps.coinGecko.getGlobal();
+        return {
+          kind: 'global',
+          source: 'CoinGecko',
+          marketCapUsd: global.data.total_market_cap.usd ?? 0,
+          btcDominancePct: global.data.market_cap_percentage.btc ?? 0,
+        };
+      } catch {
+        if (deps.cmc) {
+          const cmc = await deps.cmc.getGlobal();
+          return {
+            kind: 'global',
+            source: 'CoinMarketCap',
+            marketCapUsd: cmc.data?.total_market_cap_usd ?? 0,
+            btcDominancePct: cmc.data?.btc_dominance ?? 0,
+          };
+        }
+        return { error: 'No se pudo obtener el panorama global' };
+      }
     }
     default:
       return { error: `Herramienta desconocida: ${name}` };

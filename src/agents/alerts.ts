@@ -40,7 +40,7 @@ export function parseAlert(input: string): AlertParseResult | null {
 
 /** Evalúa una regla contra datos en vivo. Puro y testeable. */
 export function checkAlert(rule: AlertRule, scan: AggregatedScan): AlertCheckResult {
-  const funding = scan.context.binanceFunding; // decimal
+  const funding = scan.context.bitgetFunding; // decimal (fuente primaria: Bitget)
   const price = scan.snapshot.price;
 
   let currentValue: number;

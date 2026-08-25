@@ -34,20 +34,20 @@ export interface Ticker {
 export interface FundingRate {
   symbol: string;
   fundingRate: string;
-  nextFundingTime?: string;
-  settleTime?: string;
+  nextUpdate?: string; // current-fund-rate (ms)
+  fundingTime?: string; // history-fund-rate (ms)
 }
 
 /** Punto de la serie de open interest. */
 export interface OpenInterestPoint {
-  amount: string;
-  ts?: string;
+  symbol: string;
+  size: string;
 }
 
 /** Open interest de un par. */
 export interface OpenInterest {
-  symbol: string;
   openInterestList?: OpenInterestPoint[];
+  ts?: string;
 }
 
 /**

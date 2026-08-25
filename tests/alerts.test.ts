@@ -21,12 +21,13 @@ function makeScan(funding: number, price: number): AggregatedScan {
     context: {
       globalCapUsd: 0,
       btcDominancePct: 0,
+      bitgetFunding: funding,
       binanceFunding: funding,
       bybitFunding: funding,
       fundingSpreadBps: 0,
       markPrice: price,
       indexPrice: price,
-      binanceOI: 0,
+      bitgetOI: 0,
       bybitOI: 0,
     },
   };

@@ -1,25 +1,27 @@
 import type { BinanceFuturesClient } from './market/binance.js';
 import type { BybitClient } from './market/bybit.js';
 import type { CoinGeckoClient } from './market/coingecko.js';
+import type { BitgetClient } from './bitget/index.js';
 import type { MarketSnapshot } from '../types/index.js';
 
 export interface MarketSources {
-  binance: BinanceFuturesClient;
-  bybit: BybitClient;
-  coinGecko: CoinGeckoClient;
+  bitget: BitgetClient; // FUENTE PRIMARIA (precio, funding, OI, volumen)
+  binance: BinanceFuturesClient; // cross-check
+  bybit: BybitClient; // cross-check
+  coinGecko: CoinGeckoClient; // global (secundaria)
 }
 
 export interface ScanContext {
   globalCapUsd: number;
   btcDominancePct: number;
-  binanceFunding: number;
-  bybitFunding: number;
-  /** Spread de funding entre Binance y Bybit en bps (señal de basis/arbitraje). */
-  fundingSpreadBps: number;
+  bitgetFunding: number; // PRIMARIO
+  binanceFunding: number; // cross-check
+  bybitFunding: number; // cross-check
+  fundingSpreadBps: number; // Bitget vs Bybit
   markPrice: number;
   indexPrice: number;
-  binanceOI: number;
-  bybitOI: number;
+  bitgetOI: number; // PRIMARIO
+  bybitOI: number; // cross-check
 }
 
 export interface AggregatedScan {
@@ -38,8 +40,8 @@ export function toPerpPair(symbol: string): string {
 }
 
 /**
- * Agrega datos cross-exchange (Binance + Bybit + CoinGecko) en un solo snapshot.
- * Es la base de datos real que alimenta al analista LLM.
+ * Agrega datos de mercado con Bitget como fuente primaria y Binance/Bybit
+ * como cross-check. CoinGecko aporta el panorama global.
  */
 export async function buildAggregatedScan(
   symbol: string,
@@ -47,25 +49,34 @@ export async function buildAggregatedScan(
 ): Promise<AggregatedScan> {
   const pair = toPerpPair(symbol);
 
-  const [bnPremium, bnOI, bnFundingHist, byTicker, cgGlobal] = await Promise.all([
-    sources.binance.getPremiumIndex(pair),
-    sources.binance.getOpenInterest(pair),
-    sources.binance.getFundingHistory(pair, 21),
-    sources.bybit.getTicker(pair),
-    sources.coinGecko.getGlobal(),
-  ]);
+  const [bgTicker, bgFunding, bgFundingHist, bgOI, bnPremium, byTicker, cgGlobal] =
+    await Promise.all([
+      sources.bitget.getTicker(pair),
+      sources.bitget.getCurrentFunding(pair),
+      sources.bitget.getFundingHistory(pair, { pageSize: 21 }),
+      sources.bitget.getOpenInterest(pair),
+      sources.binance.getPremiumIndex(pair),
+      sources.bybit.getTicker(pair),
+      sources.coinGecko.getGlobal(),
+    ]);
 
-  const markPrice = Number(bnPremium.markPrice);
-  const indexPrice = Number(bnPremium.indexPrice);
+  // Bitget = primaria
+  const price = Number(bgTicker.lastPr ?? 0);
+  const bitgetFunding = Number(bgFunding.fundingRate);
+  const bitgetOI = Number(bgOI.openInterestList?.[0]?.size ?? 0);
+  const volume24h = Number(bgTicker.usdtVolume ?? 0);
+
+  // Cross-check (Binance + Bybit)
   const binanceFunding = Number(bnPremium.lastFundingRate);
   const bybitFunding = Number(byTicker.fundingRate);
-  const binanceOI = Number(bnOI.openInterest);
   const bybitOI = Number(byTicker.openInterest);
+  const markPrice = Number(bnPremium.markPrice);
+  const indexPrice = Number(bnPremium.indexPrice);
 
   const fundingRate7dAvg =
-    bnFundingHist.length > 0
-      ? bnFundingHist.reduce((acc, r) => acc + Number(r.fundingRate), 0) / bnFundingHist.length
-      : binanceFunding;
+    bgFundingHist.length > 0
+      ? bgFundingHist.reduce((acc, r) => acc + Number(r.fundingRate), 0) / bgFundingHist.length
+      : bitgetFunding;
 
   const upper = symbol.toUpperCase();
 
@@ -74,24 +85,25 @@ export async function buildAggregatedScan(
     pair,
     snapshot: {
       symbol: upper,
-      price: markPrice,
-      fundingRate: binanceFunding,
+      price,
+      fundingRate: bitgetFunding,
       fundingRate7dAvg,
-      openInterest: binanceOI,
-      openInterestDelta24h: 0, // TODO: requiere serie histórica de OI (próxima iteración)
-      basisAnnualized: binanceFunding * 3 * 365, // aprox: funding 8h × 3/día × 365
-      volume24h: Number(byTicker.volume24h ?? 0),
+      openInterest: bitgetOI,
+      openInterestDelta24h: 0, // TODO: serie histórica de OI
+      basisAnnualized: bitgetFunding * 3 * 365, // aprox: funding 8h × 3/día × 365
+      volume24h,
       updatedAt: Date.now(),
     },
     context: {
       globalCapUsd: cgGlobal.data.total_market_cap.usd ?? 0,
       btcDominancePct: cgGlobal.data.market_cap_percentage.btc ?? 0,
+      bitgetFunding,
       binanceFunding,
       bybitFunding,
-      fundingSpreadBps: (binanceFunding - bybitFunding) * 10000,
+      fundingSpreadBps: (bitgetFunding - bybitFunding) * 10000,
       markPrice,
       indexPrice,
-      binanceOI,
+      bitgetOI,
       bybitOI,
     },
   };
