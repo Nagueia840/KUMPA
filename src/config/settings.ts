@@ -193,7 +193,7 @@ export async function getLLMChainSettings(): Promise<{
       ? env.VISION_API_KEY
       : '';
   if (openRouterKey) {
-    const model = env.LLM_FALLBACK_MODEL || 'qwen/qwen-2.5-72b-instruct:free';
+    const model = env.LLM_FALLBACK_MODEL || 'minimax/minimax-m2.7:free';
     fallbacks.push({
       provider: 'openrouter',
       apiKey: openRouterKey,

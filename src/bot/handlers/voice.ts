@@ -31,11 +31,21 @@ export function registerVoice(bot: Bot, deps: Deps): void {
       if (!file.file_path) throw new Error('Sin archivo');
       const url = `https://api.telegram.org/file/bot${loadEnv().TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 
-      const audioRes = await fetch(url);
-      const blob = new Blob([await audioRes.arrayBuffer()], { type: 'audio/ogg' });
-      const fileObj = new File([blob], 'voice.ogg', { type: 'audio/ogg' });
-
-      const text = normalizeTranscript(await deps.llm.transcribeAudio(fileObj, loadEnv().WHISPER_MODEL));
+      // Descargar + transcribir con reintento (red transitoria: "fetch failed")
+      let text = '';
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const audioRes = await fetch(url);
+          if (!audioRes.ok) throw new Error('HTTP ' + audioRes.status);
+          const blob = new Blob([await audioRes.arrayBuffer()], { type: 'audio/ogg' });
+          const fileObj = new File([blob], 'voice.ogg', { type: 'audio/ogg' });
+          text = normalizeTranscript(await deps.llm.transcribeAudio(fileObj, loadEnv().WHISPER_MODEL));
+          break;
+        } catch (err) {
+          if (attempt === 2) throw err;
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
 
       if (!text.trim()) {
         await ctx.reply('No entendí nada del audio 😅. ¿Podés repetirlo o escribirme?');
