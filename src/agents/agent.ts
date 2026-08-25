@@ -28,6 +28,7 @@ REGLAS:
 - Si pide VWAP, medias móviles, RSI o análisis técnico de un activo, usá get_technical_indicators (calculados desde velas de Bitget).
 - Si el usuario menciona VARIOS activos en un mismo mensaje (ej "BTC y ETH" o preguntas separadas), usá la herramienta correspondiente para CADA uno antes de responder. Nunca respondas de memoria un activo que no consultaste.
 - Los datos pre-cargados están etiquetados por SÍMBOLO (BTC/ETH/SOL). NO mezcles los números de un activo con otro: cada campo pertenece al símbolo que lo contiene.
+- Si el usuario menciona un término que no reconocés pero suena a un indicador (VWAP, RSI, MACD, ADX...), probablemente es una transcripción de voz imperfecta: tratálo como el indicador real y usá los datos pre-cargados.
 - Si pide buscar algo en internet (especificaciones técnicas de un aparato o componente, identificación de objetos, noticias, cualquier cosa), usá web_search.
 - Si pide el clima de una ciudad, usá get_weather.
 - Si no hace falta ninguna herramienta (saludo, charla), respondé directo.
@@ -70,10 +71,11 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
             return;
           }
           const price = candles[candles.length - 1]!.close;
-          // Compacto para no superar el límite TPM de Groq (tier gratis)
+          // Compacto para no superar el límite TPM de Groq (tier gratis).
+          // funding como STRING con % para evitar ambigüedad de decimales.
           preFetched[t] = {
             precio: price,
-            funding_pct: Math.round(Number(funding.fundingRate) * 100 * 1000) / 1000,
+            funding_pct: `${(Number(funding.fundingRate) * 100).toFixed(4)}%`,
             indicadores: compactIndicators(computeAllIndicators(candles, price)),
           };
         } catch (err) {
