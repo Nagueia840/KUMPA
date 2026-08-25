@@ -25,7 +25,7 @@ export class VisionClient {
   }
 
   async describe(imageUrl: string, prompt: string): Promise<string> {
-    const messages = [
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
         role: 'user',
         content: [
