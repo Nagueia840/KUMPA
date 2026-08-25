@@ -1,6 +1,6 @@
 import type { Deps } from '../deps.js';
 import { buildAggregatedScan, toPerpPair } from '../data/snapshot.js';
-import { computeEMA, computeRSI, computeSMA, computeVWAP, parseCandle } from '../data/indicators.js';
+import { computeAllIndicators, parseCandle } from '../data/indicators.js';
 import { weatherCodeDescription } from '../data/web/weather.js';
 import type { AlertRule } from '../types/index.js';
 
@@ -257,25 +257,14 @@ export async function executeTool(
         '1d': '1D', '1w': '1W',
       };
       const timeframe = tfMap[String(args.timeframe ?? '1d').toLowerCase()] ?? '1D';
-      const raw = await deps.bitget.getCandles(toPerpPair(symbol), timeframe, { limit: 200 });
+      const raw = await deps.bitget.getCandlesHistory(toPerpPair(symbol), timeframe, 210);
       const candles = raw.map(parseCandle).sort((a, b) => a.time - b.time);
       if (candles.length < 20) return { error: 'Velas insuficientes para indicadores' };
-      const closes = candles.map((c) => c.close);
-      // VWAP semanal: últimas 7 velas diarias (o 168 de 1H)
-      const vwapWindow = timeframe === '1H' ? candles.slice(-168) : candles.slice(-7);
-      const last = candles[candles.length - 1];
       const scan = await buildAggregatedScan(symbol, deps);
       return {
         symbol: symbol.toUpperCase(),
         timeframe,
-        price: scan.snapshot.price,
-        vwapWeekly: computeVWAP(vwapWindow),
-        ma20: computeSMA(closes, 20),
-        ema20: computeEMA(closes, 20),
-        rsi14: computeRSI(closes, 14),
-        weekHigh: vwapWindow.length ? Math.max(...vwapWindow.map((c) => c.high)) : undefined,
-        weekLow: vwapWindow.length ? Math.min(...vwapWindow.map((c) => c.low)) : undefined,
-        lastClose: last?.close,
+        indicators: computeAllIndicators(candles, scan.snapshot.price),
       };
     }
     case 'web_search': {

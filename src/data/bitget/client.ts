@@ -124,13 +124,39 @@ export class BitgetClient {
   async getCandles(
     symbol: string,
     granularity: string,
-    opts: { limit?: number; productType?: ProductType } = {},
+    opts: { limit?: number; productType?: ProductType; endTime?: number } = {},
   ): Promise<Candle[]> {
     return this.request<Candle[]>({
       method: 'GET',
       path: '/api/v2/mix/market/candles',
-      query: { symbol, granularity, productType: opts.productType ?? 'USDT-FUTURES', limit: opts.limit ?? 100 },
+      query: {
+        symbol,
+        granularity,
+        productType: opts.productType ?? 'USDT-FUTURES',
+        limit: opts.limit ?? 100,
+        endTime: opts.endTime,
+      },
     });
+  }
+
+  /** Obtiene velas paginando hasta `minCount` (Bitget limita a ~90 por request). */
+  async getCandlesHistory(
+    symbol: string,
+    granularity: string,
+    minCount: number,
+    productType: ProductType = 'USDT-FUTURES',
+  ): Promise<Candle[]> {
+    const all: Candle[] = [];
+    let endTime: number | undefined;
+    for (let page = 0; page < 5 && all.length < minCount; page++) {
+      const batch = await this.getCandles(symbol, granularity, { limit: 90, productType, endTime });
+      if (batch.length === 0) break;
+      all.push(...batch);
+      const times = batch.map((c) => Number(c[0])).filter((n) => Number.isFinite(n));
+      if (times.length === 0) break;
+      endTime = Math.min(...times) - 1;
+    }
+    return all;
   }
 }
 
