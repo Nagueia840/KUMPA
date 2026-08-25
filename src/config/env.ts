@@ -8,8 +8,9 @@ try {
   // .env opcional
 }
 
-/** Convierte cadena vacía a undefined (estándar para vars de .env). */
-const emptyToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+/** Convierte cadena vacía o placeholder (PEGAR_...) a undefined. */
+const emptyToUndefined = (v: unknown) =>
+  typeof v === 'string' && (v.trim() === '' || /^PEGAR_/i.test(v.trim())) ? undefined : v;
 
 /** URL opcional: vacío → undefined, o URL válida. */
 const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
@@ -60,7 +61,7 @@ const envSchema = z.object({
   // ── Visión (imágenes; requiere provider multimodal: OpenRouter/Gemini/OpenAI)
   VISION_API_KEY: z.string().default(''),
   VISION_BASE_URL: optionalUrl,
-  VISION_MODEL: z.string().default('gemini-2.0-flash'),
+  VISION_MODEL: z.string().default('gemini-3.6-flash'),
   WHISPER_MODEL: z.string().default('whisper-large-v3-turbo'),
 
   // ── Redis (BullMQ, opcional en MVP) ──────────────────────
