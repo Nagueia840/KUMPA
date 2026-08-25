@@ -14,7 +14,14 @@ export class VisionClient {
       throw new Error('Falta VISION_API_KEY para leer imágenes.');
     }
     this.settings = settings;
-    this.client = new OpenAI({ baseURL: settings.baseURL, apiKey: settings.apiKey });
+    this.client = new OpenAI({
+      baseURL: settings.baseURL,
+      apiKey: settings.apiKey,
+      // OpenRouter recomienda estos headers para ranking/uso
+      defaultHeaders: settings.baseURL.includes('openrouter')
+        ? { 'HTTP-Referer': 'https://kumpa.local', 'X-Title': 'Kumpa' }
+        : undefined,
+    });
   }
 
   async describe(imageUrl: string, prompt: string): Promise<string> {
