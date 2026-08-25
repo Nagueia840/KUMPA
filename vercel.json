@@ -6,11 +6,5 @@
     "api/cron.ts": {
       "maxDuration": 10
     }
-  },
-  "crons": [
-    {
-      "path": "/api/cron",
-      "schedule": "0 * * * *"
-    }
-  ]
+  }
 }
