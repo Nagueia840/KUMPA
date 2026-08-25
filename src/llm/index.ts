@@ -59,8 +59,7 @@ export class LLMClient {
   }
 
   /** Pide JSON y lo parsea con tolerancia a fences markdown. */
-  async chatJSON<T>(messages: ChatMessage[], opts: ChatOptions = {}): Promise<T> {
-    const jsonInstruction =
+  async chatJSON<T>(messages: ChatMessage[], opts: ChatOptions = {}): Promise<T> {    const jsonInstruction =
       'Respondé ÚNICAMENTE con un JSON válido, sin markdown ni texto alrededor.';
     const system = opts.system ? `${opts.system}\n\n${jsonInstruction}` : jsonInstruction;
 
@@ -82,6 +81,12 @@ export class LLMClient {
       // Algunos proveedores no soportan response_format json_object → reintentar sin él
       return await attempt(false);
     }
+  }
+
+  /** Transcribe audio a texto con Whisper (Groq). */
+  async transcribeAudio(file: File, model: string, language = 'es'): Promise<string> {
+    const res = await this.client.audio.transcriptions.create({ model, file, language });
+    return res.text;
   }
 }
 

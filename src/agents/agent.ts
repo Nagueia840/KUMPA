@@ -52,21 +52,38 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
     // Las herramientas se ofrecen solo en el primer paso; después se fuerza texto.
     const allowTools = step === 0;
 
-    const res = allowTools
-      ? await deps.llm.client.chat.completions.create({
-          model: deps.llm.settings.model,
-          messages,
-          tools: TOOLS as Tool[],
-          tool_choice: 'auto',
-          temperature: 0.3,
-          max_tokens: 2500,
-        })
-      : await deps.llm.client.chat.completions.create({
-          model: deps.llm.settings.model,
-          messages,
-          temperature: 0.3,
-          max_tokens: 2500,
+    let res;
+    try {
+      res = allowTools
+        ? await deps.llm.client.chat.completions.create({
+            model: deps.llm.settings.model,
+            messages,
+            tools: TOOLS as Tool[],
+            tool_choice: 'auto',
+            temperature: 0.3,
+            max_tokens: 2500,
+          })
+        : await deps.llm.client.chat.completions.create({
+            model: deps.llm.settings.model,
+            messages,
+            tools: TOOLS as Tool[],
+            tool_choice: 'none',
+            temperature: 0.3,
+            max_tokens: 2500,
+          });
+    } catch (err) {
+      // Defensa: si el modelo insiste en llamar tools con tool_choice 'none',
+      // le pedimos texto explícito y reintentamos (acotado por MAX_STEPS).
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (!allowTools && /tool/i.test(errMsg)) {
+        messages.push({
+          role: 'user',
+          content: 'Respondé ahora con texto únicamente, sin llamar herramientas.',
         });
+        continue;
+      }
+      throw err;
+    }
 
     const msg = res.choices[0]?.message;
     if (!msg) return 'No pude procesar tu mensaje.';

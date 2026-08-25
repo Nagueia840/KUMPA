@@ -61,6 +61,7 @@ const envSchema = z.object({
   VISION_API_KEY: z.string().default(''),
   VISION_BASE_URL: optionalUrl,
   VISION_MODEL: z.string().default('google/gemini-2.0-flash-001'),
+  WHISPER_MODEL: z.string().default('whisper-large-v3-turbo'),
 
   // ── Redis (BullMQ, opcional en MVP) ──────────────────────
   UPSTASH_REDIS_URL: optionalUrl,
