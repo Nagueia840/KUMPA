@@ -29,11 +29,18 @@ export function registerVision(bot: Bot, deps: Deps): void {
       if (!file.file_path) throw new Error('No se pudo obtener el archivo');
       const url = `https://api.telegram.org/file/bot${loadEnv().TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 
+      // Descargar y pasar como base64 (más confiable que URL para los proveedores)
+      const imgRes = await fetch(url);
+      if (!imgRes.ok) throw new Error('No se pudo descargar la imagen');
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      const mime = imgRes.headers.get('content-type') ?? 'image/jpeg';
+      const dataUri = `data:${mime};base64,${buf.toString('base64')}`;
+
       const prompt = caption
         ? `El usuario dice: "${caption}". Identificá y describí lo que hay en la imagen (objeto, pieza, componente, aparato) y respondé a su pedido.`
         : 'Identificá y describí lo que hay en la imagen (objeto, pieza, componente, aparato). Si podés, mencioná características técnicas o para qué sirve.';
 
-      const reply = stripReasoning(await deps.vision.describe(url, prompt));
+      const reply = stripReasoning(await deps.vision.describe(dataUri, prompt));
       await ctx.reply(reply);
     } catch (err) {
       await ctx.reply(`⚠️ No pude procesar la imagen: ${err instanceof Error ? err.message : err}`);

@@ -24,7 +24,7 @@ export class VisionClient {
     });
   }
 
-  async describe(imageUrl: string, prompt: string): Promise<string> {
+  async describe(imageUrl: string, prompt: string, modelOverride?: string): Promise<string> {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
         role: 'user',
@@ -35,13 +35,15 @@ export class VisionClient {
       },
     ];
 
+    const primary = modelOverride ?? this.settings.model;
+
     try {
-      return await this.call(this.settings.model, messages);
+      return await this.call(primary, messages);
     } catch (err) {
-      // Fallback automático al segundo modelo gratuito
-      if (this.settings.fallbackModel) {
+      // Fallback automático al segundo modelo gratuito (solo si no hay override)
+      if (!modelOverride && this.settings.fallbackModel) {
         console.warn(
-          `[vision] modelo ${this.settings.model} falló, usando ${this.settings.fallbackModel}:`,
+          `[vision] modelo ${primary} falló, usando ${this.settings.fallbackModel}:`,
           err instanceof Error ? err.message : err,
         );
         return await this.call(this.settings.fallbackModel, messages);

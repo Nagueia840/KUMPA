@@ -167,7 +167,7 @@ export async function getVisionSettings(): Promise<VisionSettings> {
     apiKey: env.VISION_API_KEY,
     // Default: OpenRouter (gratis, funciona global; modelos :free con fallback)
     baseURL: env.VISION_BASE_URL ?? 'https://openrouter.ai/api/v1',
-    model: env.VISION_MODEL || 'qwen/qwen-2.5-vl-72b-instruct:free',
-    fallbackModel: env.VISION_MODEL_FALLBACK || 'meta-llama/llama-3.2-11b-vision-instruct:free',
+    model: env.VISION_MODEL || 'minimax/minimax-m3:free',
+    fallbackModel: env.VISION_MODEL_FALLBACK || 'google/gemma-4-31b-it:free',
   };
 }
