@@ -38,6 +38,12 @@ const envSchema = z.object({
   LLM_FAST_MODEL: z.string().default(''),
   LLM_SMART_MODEL: z.string().default(''),
 
+  // ── Fallback de LLM (cuando el proveedor principal se queda sin cuota) ──
+  LLM_FALLBACK_API_KEY: z.string().default(''), // OpenRouter (gratis; puede reusar VISION_API_KEY)
+  LLM_FALLBACK_MODEL: z.string().default(''),
+  LLM_FALLBACK2_API_KEY: z.string().default(''), // DeepSeek (último recurso)
+  LLM_FALLBACK2_MODEL: z.string().default(''),
+
   // ── Embeddings (memoria semántica; OpenAI text-embedding-3-small por defecto)
   EMBEDDING_API_KEY: z.string().default(''),
   EMBEDDING_BASE_URL: optionalUrl,

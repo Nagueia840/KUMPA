@@ -2,8 +2,8 @@ import OpenAI from 'openai';
 import type { ChatMessage } from '../types/index.js';
 import type { LLMSettings } from '../config/settings.js';
 
-/** Tipo de mensaje del SDK de OpenAI (compatible con Groq/DeepSeek/OpenRouter). */
 type OpenAIMessageParam = OpenAI.Chat.Completions.ChatCompletionMessageParam;
+type CreateParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
 
 export interface ChatOptions {
   system?: string;
@@ -12,45 +12,76 @@ export interface ChatOptions {
   model?: string; // override del modelo (ej: fast/smart)
 }
 
-/** Cliente LLM OpenAI-compatible (Groq, DeepSeek, OpenRouter, custom). */
+interface ChainEntry {
+  client: OpenAI;
+  settings: LLMSettings;
+}
+
+/**
+ * Cliente LLM OpenAI-compatible con FALLBACK automático de proveedor:
+ * ante 429 (rate limit), 5xx o errores de auth, prueba el siguiente
+ * proveedor de la cadena (ej. Groq → OpenRouter :free → DeepSeek).
+ */
 export class LLMClient {
-  readonly client: OpenAI;
+  private chain: ChainEntry[];
   readonly settings: LLMSettings;
 
-  constructor(settings: LLMSettings) {
-    if (!settings.apiKey) {
+  constructor(primary: LLMSettings, fallbacks: LLMSettings[] = []) {
+    if (!primary.apiKey) {
       throw new Error(
         'Falta LLM_API_KEY. Agregala en .env o en la tabla app_settings de Supabase (llm_api_key).',
       );
     }
-    this.settings = settings;
-    this.client = new OpenAI({ baseURL: settings.baseURL, apiKey: settings.apiKey });
+    this.settings = primary;
+    this.chain = [this.buildEntry(primary), ...fallbacks.filter((f) => f.apiKey).map((f) => this.buildEntry(f))];
   }
 
-  /** Convierte mensajes de dominio a la forma tipada del SDK (sin assertions). */
-  private toOpenAI(messages: ChatMessage[], system?: string): OpenAIMessageParam[] {
-    const out: OpenAIMessageParam[] = [];
-    if (system) out.push({ role: 'system', content: system });
-    for (const m of messages) {
-      switch (m.role) {
-        case 'system':
-          out.push({ role: 'system', content: m.content });
-          break;
-        case 'user':
-          out.push({ role: 'user', content: m.content });
-          break;
-        case 'assistant':
-          out.push({ role: 'assistant', content: m.content });
-          break;
+  private buildEntry(s: LLMSettings): ChainEntry {
+    return { client: new OpenAI({ baseURL: s.baseURL, apiKey: s.apiKey }), settings: s };
+  }
+
+  /** Cliente del proveedor primario (compat). */
+  get client(): OpenAI {
+    return this.chain[0]!.client;
+  }
+
+  /** Chat completions con fallback automático entre proveedores. */
+  async completionsCreate(params: CreateParams) {
+    let lastError: unknown = new Error('Sin proveedores LLM disponibles');
+    for (const entry of this.chain) {
+      try {
+        const model = this.mapModel(params.model, entry.settings);
+        return await entry.client.chat.completions.create({ ...params, model });
+      } catch (err) {
+        lastError = err;
+        if (!shouldFallbackProvider(err)) throw err;
+        console.warn(
+          `[llm] proveedor ${entry.settings.provider} falló, probando siguiente:`,
+          err instanceof Error ? err.message : err,
+        );
       }
     }
-    return out;
+    throw lastError;
+  }
+
+  /** Mapea el modelo pedido (del primario) al equivalente del proveedor de turno. */
+  private mapModel(requested: string, entry: LLMSettings): string {
+    if (requested === this.settings.model) return entry.model;
+    if (requested === this.settings.fastModel) return entry.fastModel;
+    if (requested === this.settings.smartModel) return entry.smartModel;
+    return requested;
+  }
+
+  private buildMessages(messages: ChatMessage[], system?: string): OpenAIMessageParam[] {
+    return (system
+      ? [{ role: 'system' as const, content: system }, ...messages]
+      : messages) as OpenAIMessageParam[];
   }
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
-    const res = await this.client.chat.completions.create({
+    const res = await this.completionsCreate({
       model: opts.model ?? this.settings.model,
-      messages: this.toOpenAI(messages, opts.system),
+      messages: this.buildMessages(messages, opts.system),
       temperature: opts.temperature ?? 0.3,
       max_tokens: opts.maxTokens ?? 1500,
     });
@@ -59,14 +90,15 @@ export class LLMClient {
   }
 
   /** Pide JSON y lo parsea con tolerancia a fences markdown. */
-  async chatJSON<T>(messages: ChatMessage[], opts: ChatOptions = {}): Promise<T> {    const jsonInstruction =
+  async chatJSON<T>(messages: ChatMessage[], opts: ChatOptions = {}): Promise<T> {
+    const jsonInstruction =
       'Respondé ÚNICAMENTE con un JSON válido, sin markdown ni texto alrededor.';
     const system = opts.system ? `${opts.system}\n\n${jsonInstruction}` : jsonInstruction;
 
     const attempt = async (withResponseFormat: boolean): Promise<T> => {
-      const res = await this.client.chat.completions.create({
+      const res = await this.completionsCreate({
         model: opts.model ?? this.settings.model,
-        messages: this.toOpenAI(messages, system),
+        messages: this.buildMessages(messages, system),
         temperature: opts.temperature ?? 0.2,
         max_tokens: opts.maxTokens ?? 2000,
         response_format: withResponseFormat ? { type: 'json_object' } : undefined,
@@ -85,9 +117,24 @@ export class LLMClient {
 
   /** Transcribe audio a texto con Whisper (Groq). */
   async transcribeAudio(file: File, model: string, language = 'es'): Promise<string> {
-    const res = await this.client.audio.transcriptions.create({ model, file, language });
+    const res = await this.chain[0]!.client.audio.transcriptions.create({ model, file, language });
     return res.text;
   }
+}
+
+/** ¿Debe probarse el siguiente proveedor ante este error? (429/5xx/auth/red) */
+export function shouldFallbackProvider(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    status === 401 ||
+    status === 403 ||
+    status === 429 ||
+    (status !== undefined && status >= 500) ||
+    /rate limit|quota|tokens per (day|minute)|authentication|fetch failed|ECONNREFUSED|ETIMEDOUT|timeout/i.test(
+      msg,
+    )
+  );
 }
 
 /** Extrae y parsea JSON, tolerando fences markdown ```json ... ```. */

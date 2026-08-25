@@ -159,9 +159,7 @@ export interface VisionSettings {
   baseURL: string;
   model: string;
   fallbackModel?: string;
-}
-
-export async function getVisionSettings(): Promise<VisionSettings> {
+}export async function getVisionSettings(): Promise<VisionSettings> {
   const env = loadEnv();
   return {
     apiKey: env.VISION_API_KEY,
@@ -170,4 +168,54 @@ export async function getVisionSettings(): Promise<VisionSettings> {
     model: env.VISION_MODEL || 'minimax/minimax-m3:free',
     fallbackModel: env.VISION_MODEL_FALLBACK || 'google/gemma-4-31b-it:free',
   };
+}
+
+/**
+ * Cadena de proveedores LLM con fallback:
+ *  1) principal (Groq) → 2) OpenRouter gratuito → 3) DeepSeek (último recurso).
+ * Ante 429/5xx/auth del proveedor actual, pasa al siguiente automáticamente.
+ */
+export async function getLLMChainSettings(): Promise<{
+  primary: LLMSettings;
+  fallbacks: LLMSettings[];
+}> {
+  const primary = await getLLMSettings();
+  const env = loadEnv();
+  const fallbacks: LLMSettings[] = [];
+
+  // Una key "real" no está vacía ni es un placeholder (PEGAR_...)
+  const realKey = (k: string) => k.length > 0 && !k.startsWith('PEGAR_') && !/^TU_/i.test(k);
+
+  // Fallback 1: OpenRouter con modelo :free (reusa VISION_API_KEY si es de OpenRouter)
+  const openRouterKey = realKey(env.LLM_FALLBACK_API_KEY)
+    ? env.LLM_FALLBACK_API_KEY
+    : realKey(env.VISION_API_KEY) && env.VISION_API_KEY.startsWith('sk-or-v1-')
+      ? env.VISION_API_KEY
+      : '';
+  if (openRouterKey) {
+    const model = env.LLM_FALLBACK_MODEL || 'qwen/qwen-2.5-72b-instruct:free';
+    fallbacks.push({
+      provider: 'openrouter',
+      apiKey: openRouterKey,
+      baseURL: 'https://openrouter.ai/api/v1',
+      model,
+      fastModel: model,
+      smartModel: model,
+    });
+  }
+
+  // Fallback 2 (último recurso): DeepSeek
+  if (realKey(env.LLM_FALLBACK2_API_KEY)) {
+    const model = env.LLM_FALLBACK2_MODEL || 'deepseek-chat';
+    fallbacks.push({
+      provider: 'deepseek',
+      apiKey: env.LLM_FALLBACK2_API_KEY,
+      baseURL: 'https://api.deepseek.com',
+      model,
+      fastModel: model,
+      smartModel: env.LLM_FALLBACK2_MODEL || 'deepseek-reasoner',
+    });
+  }
+
+  return { primary, fallbacks };
 }

@@ -14,7 +14,7 @@ import { OpenMeteoClient } from './data/web/weather.js';
 import { LLMClient } from './llm/index.js';
 import { EmbeddingClient } from './llm/embed.js';
 import { VisionClient } from './llm/vision.js';
-import { getEmbeddingSettings, getLLMSettings, getVisionSettings } from './config/settings.js';
+import { getEmbeddingSettings, getLLMChainSettings, getVisionSettings } from './config/settings.js';
 import { loadEnv } from './config/env.js';
 import { MemoryStore } from './memory/store.js';
 
@@ -63,15 +63,18 @@ async function createVision(): Promise<VisionClient | null> {
 /** Construye el contenedor de dependencias a partir de la configuración. */
 export async function createDeps(): Promise<Deps> {
   const env = loadEnv();
-  const [llmSettings, embedder, vision] = await Promise.all([
-    getLLMSettings(),
+  const [llmChain, embedder, vision] = await Promise.all([
+    getLLMChainSettings(),
     createEmbedder(),
     createVision(),
   ]);
 
   let llm: LLMClient | null = null;
-  if (llmSettings.apiKey) {
-    llm = new LLMClient(llmSettings);
+  if (llmChain.primary.apiKey) {
+    llm = new LLMClient(llmChain.primary, llmChain.fallbacks);
+    if (llmChain.fallbacks.length > 0) {
+      console.info(`[deps] LLM con fallback: ${llmChain.fallbacks.map((f) => f.provider).join(' → ')}`);
+    }
   } else {
     console.warn('[deps] Sin LLM_API_KEY: los comandos corren en modo datos (sin análisis LLM).');
   }

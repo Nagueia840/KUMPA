@@ -105,7 +105,7 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
     let res;
     try {
       res = allowTools
-        ? await deps.llm.client.chat.completions.create({
+        ? await deps.llm.completionsCreate({
             model: deps.llm.settings.model,
             messages,
             tools: TOOLS as Tool[],
@@ -114,7 +114,7 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
             temperature: 0.3,
             max_tokens: 2500,
           })
-        : await deps.llm.client.chat.completions.create({
+        : await deps.llm.completionsCreate({
             model: deps.llm.settings.model,
             messages,
             tools: TOOLS as Tool[],
