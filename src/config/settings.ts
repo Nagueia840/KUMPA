@@ -164,7 +164,8 @@ export async function getVisionSettings(): Promise<VisionSettings> {
   const env = loadEnv();
   return {
     apiKey: env.VISION_API_KEY,
-    baseURL: env.VISION_BASE_URL ?? 'https://openrouter.ai/api/v1',
-    model: env.VISION_MODEL || 'google/gemini-2.0-flash-001',
+    // Default: Google Gemini (gratis en AI Studio, endpoint OpenAI-compatible)
+    baseURL: env.VISION_BASE_URL ?? 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    model: env.VISION_MODEL || 'gemini-2.0-flash',
   };
 }
