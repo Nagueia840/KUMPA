@@ -232,7 +232,9 @@ export async function executeTool(
       return results.map((r) => ({
         title: r.title,
         url: r.url,
-        snippet: (r.text ?? '').slice(0, 500),
+        snippet:
+          (r.highlights ?? []).join(' ').slice(0, 500) ||
+          (r.text ?? '').slice(0, 500),
       }));
     }
     case 'get_weather': {
