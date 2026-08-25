@@ -3,7 +3,9 @@ import type { Deps } from '../deps.js';
 import { KUMPA_SYSTEM_PROMPT } from '../config/personality.js';
 import { stripReasoning } from '../llm/index.js';
 import { executeTool, TOOLS, type ToolName } from './tools.js';
-import { detectTicker } from '../utils/tickers.js';
+import { extractAllTickers } from '../utils/tickers.js';
+import { toPerpPair } from '../data/snapshot.js';
+import { computeAllIndicators, parseCandle } from '../data/indicators.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('agent');
@@ -24,6 +26,7 @@ REGLAS:
 - Si pregunta por TVL, stablecoins o el mercado en general, usá get_onchain_data.
 - Si solo pide un precio rápido, usá get_price.
 - Si pide VWAP, medias móviles, RSI o análisis técnico de un activo, usá get_technical_indicators (calculados desde velas de Bitget).
+- Si el usuario menciona VARIOS activos en un mismo mensaje (ej "BTC y ETH" o preguntas separadas), usá la herramienta correspondiente para CADA uno antes de responder. Nunca respondas de memoria un activo que no consultaste.
 - Si pide buscar algo en internet (especificaciones técnicas de un aparato o componente, identificación de objetos, noticias, cualquier cosa), usá web_search.
 - Si pide el clima de una ciudad, usá get_weather.
 - Si no hace falta ninguna herramienta (saludo, charla), respondé directo.
@@ -35,6 +38,7 @@ REGLAS:
 `;
 
 const MAX_STEPS = 5;
+const MAX_TOOL_ROUNDS = 3; // suficientes para consultas multi-activo (BTC+ETH+SOL)
 
 /** Procesa un mensaje conversacional con function calling. */
 export async function handleMessage(deps: Deps, chatId: number, userText: string): Promise<string> {
@@ -45,19 +49,46 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
   // Memoria de contexto: últimas conversaciones (si hay Supabase, persiste)
   const history = await deps.memory.getRecentConversations(chatId, 8);
 
-  // Si el mensaje menciona un ticker → forzar uso de herramientas (datos reales,
-  // nunca responder de memoria)
-  const hasTicker = detectTicker(userText) !== null;
+  // PRE-FETCH determinista: datos reales para TODOS los tickers mencionados
+  // (multi-activo). Se saltea en pedidos de alerta (lo resuelve set_*_alert).
+  const isAlertRequest = /avis|alerta|cuando (supere|baje|toque|rompa)|cuando.*(sub|baj)/i.test(userText);
+  const tickers = isAlertRequest ? [] : extractAllTickers(userText);
+
+  const preFetched: Record<string, unknown> = {};
+  if (tickers.length > 0) {
+    await Promise.all(
+      tickers.map(async (t) => {
+        try {
+          const raw = await deps.bitget.getCandlesHistory(toPerpPair(t), '1D', 210);
+          const candles = raw.map(parseCandle).sort((a, b) => a.time - b.time);
+          if (candles.length < 20) {
+            preFetched[t] = { error: 'velas insuficientes' };
+            return;
+          }
+          const price = candles[candles.length - 1]!.close;
+          preFetched[t] = { price, indicators: computeAllIndicators(candles, price) };
+        } catch (err) {
+          console.warn(`[agent] pre-fetch ${t} falló:`, err instanceof Error ? err.message : err);
+          preFetched[t] = { error: 'no se pudo obtener datos' };
+        }
+      }),
+    );
+  }
+
+  const contextBlock =
+    Object.keys(preFetched).length > 0
+      ? `\nDATOS REALES YA OBTENIDOS (no vuelvas a llamar herramientas de mercado para estos activos, usalos directo):\n${JSON.stringify(preFetched, null, 2)}`
+      : '';
 
   const messages: MessageParam[] = [
-    { role: 'system', content: KUMPA_SYSTEM_PROMPT + '\n\n' + AGENT_INSTRUCTIONS },
+    { role: 'system', content: KUMPA_SYSTEM_PROMPT + '\n\n' + AGENT_INSTRUCTIONS + contextBlock },
     ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
     { role: 'user', content: userText },
   ];
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    // Las herramientas se ofrecen solo en el primer paso; después se fuerza texto.
-    const allowTools = step === 0;
+    // Herramientas disponibles en las primeras rondas; después se fuerza texto.
+    const allowTools = step < MAX_TOOL_ROUNDS;
 
     let res;
     try {
@@ -66,8 +97,8 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
             model: deps.llm.settings.model,
             messages,
             tools: TOOLS as Tool[],
-            // Con ticker → 'required' fuerza a usar una herramienta (nunca memoria)
-            tool_choice: hasTicker ? 'required' : 'auto',
+            // 'auto': el modelo usa herramientas para lo que no está pre-feteado
+            tool_choice: 'auto',
             temperature: 0.3,
             max_tokens: 2500,
           })

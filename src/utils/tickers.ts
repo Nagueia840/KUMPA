@@ -52,3 +52,24 @@ export function detectTicker(text: string): string | null {
 
   return null;
 }
+
+/** Extrae TODOS los tickers únicos mencionados en un texto (multi-activo). */
+export function extractAllTickers(text: string): string[] {
+  const found = new Set<string>();
+
+  for (const m of text.matchAll(/\$([A-Za-z]{2,10})/g)) {
+    if (m[1]) found.add(m[1].toUpperCase());
+  }
+
+  for (const w of text.toUpperCase().split(/[^A-Z0-9]+/)) {
+    if (KNOWN_TICKERS.includes(w)) found.add(w);
+    if (w.endsWith('USDT') && w.length > 4) found.add(w.slice(0, -4));
+  }
+
+  const lower = text.toLowerCase();
+  for (const [name, ticker] of Object.entries(NAME_TO_TICKER)) {
+    if (lower.includes(name)) found.add(ticker);
+  }
+
+  return [...found];
+}
