@@ -5,7 +5,7 @@ import { stripReasoning } from '../llm/index.js';
 import { executeTool, TOOLS, type ToolName } from './tools.js';
 import { extractAllTickers } from '../utils/tickers.js';
 import { toPerpPair } from '../data/snapshot.js';
-import { computeAllIndicators, parseCandle } from '../data/indicators.js';
+import { compactIndicators, computeAllIndicators, parseCandle } from '../data/indicators.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('agent');
@@ -27,6 +27,7 @@ REGLAS:
 - Si solo pide un precio rápido, usá get_price.
 - Si pide VWAP, medias móviles, RSI o análisis técnico de un activo, usá get_technical_indicators (calculados desde velas de Bitget).
 - Si el usuario menciona VARIOS activos en un mismo mensaje (ej "BTC y ETH" o preguntas separadas), usá la herramienta correspondiente para CADA uno antes de responder. Nunca respondas de memoria un activo que no consultaste.
+- Los datos pre-cargados están etiquetados por SÍMBOLO (BTC/ETH/SOL). NO mezcles los números de un activo con otro: cada campo pertenece al símbolo que lo contiene.
 - Si pide buscar algo en internet (especificaciones técnicas de un aparato o componente, identificación de objetos, noticias, cualquier cosa), usá web_search.
 - Si pide el clima de una ciudad, usá get_weather.
 - Si no hace falta ninguna herramienta (saludo, charla), respondé directo.
@@ -47,7 +48,7 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
   }
 
   // Memoria de contexto: últimas conversaciones (si hay Supabase, persiste)
-  const history = await deps.memory.getRecentConversations(chatId, 8);
+  const history = await deps.memory.getRecentConversations(chatId, 6);
 
   // PRE-FETCH determinista: datos reales para TODOS los tickers mencionados
   // (multi-activo). Se saltea en pedidos de alerta (lo resuelve set_*_alert).
@@ -59,14 +60,22 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
     await Promise.all(
       tickers.map(async (t) => {
         try {
-          const raw = await deps.bitget.getCandlesHistory(toPerpPair(t), '1D', 210);
+          const [raw, funding] = await Promise.all([
+            deps.bitget.getCandlesHistory(toPerpPair(t), '1D', 210),
+            deps.bitget.getCurrentFunding(toPerpPair(t)),
+          ]);
           const candles = raw.map(parseCandle).sort((a, b) => a.time - b.time);
           if (candles.length < 20) {
             preFetched[t] = { error: 'velas insuficientes' };
             return;
           }
           const price = candles[candles.length - 1]!.close;
-          preFetched[t] = { price, indicators: computeAllIndicators(candles, price) };
+          // Compacto para no superar el límite TPM de Groq (tier gratis)
+          preFetched[t] = {
+            precio: price,
+            funding_pct: Math.round(Number(funding.fundingRate) * 100 * 1000) / 1000,
+            indicadores: compactIndicators(computeAllIndicators(candles, price)),
+          };
         } catch (err) {
           console.warn(`[agent] pre-fetch ${t} falló:`, err instanceof Error ? err.message : err);
           preFetched[t] = { error: 'no se pudo obtener datos' };

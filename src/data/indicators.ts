@@ -562,3 +562,50 @@ export function computeAllIndicators(candles: Candle[], price: number): Technica
     fractals: computeFractals(candles),
   };
 }
+
+const round = (n: number | null | undefined): number | null =>
+  n == null || Number.isNaN(n) ? null : Math.round(n);
+const round1 = (n: number | null | undefined): number | null =>
+  n == null || Number.isNaN(n) ? null : Math.round(n * 10) / 10;
+
+/**
+ * Versión COMPACTA pero CLARA del snapshot para inyectar como contexto al LLM
+ * (ahorra tokens — clave para el límite TPM del tier gratis de Groq).
+ * Sin arrays ambiguos: cada campo con nombre explícito para no confundir símbolos.
+ */
+export function compactIndicators(ind: TechnicalSnapshot): Record<string, unknown> {
+  return {
+    precio: round(ind.price),
+    vwap_semanal: round(ind.vwapWeekly),
+    sma20: round(ind.sma20),
+    sma50: round(ind.sma50),
+    sma100: round(ind.sma100),
+    sma200: round(ind.sma200),
+    ema20: round(ind.ema20),
+    rsi: round1(ind.rsi14),
+    macd_linea: ind.macd ? round(ind.macd.macd) : null,
+    macd_senal: ind.macd ? round(ind.macd.signal) : null,
+    macd_histograma: ind.macd ? round(ind.macd.histogram) : null,
+    stochastic: ind.stochastic ? round1(ind.stochastic.k) : null,
+    cci: round1(ind.cci),
+    williamsR: round1(ind.williamsR),
+    atr: round(ind.atr14),
+    bollinger_inferior: ind.bollinger ? round(ind.bollinger.lower) : null,
+    bollinger_media: ind.bollinger ? round(ind.bollinger.middle) : null,
+    bollinger_superior: ind.bollinger ? round(ind.bollinger.upper) : null,
+    adx: ind.adx ? round1(ind.adx.adx) : null,
+    di_positivo: ind.adx ? round1(ind.adx.plusDi) : null,
+    di_negativo: ind.adx ? round1(ind.adx.minusDi) : null,
+    ichimoku_tenkan: ind.ichimoku ? round(ind.ichimoku.tenkan) : null,
+    ichimoku_kijun: ind.ichimoku ? round(ind.ichimoku.kijun) : null,
+    superTrend_direccion: ind.superTrend ? ind.superTrend.direction : null,
+    superTrend_nivel: ind.superTrend ? round(ind.superTrend.value) : null,
+    mfi: round1(ind.mfi14),
+    pivot_p: ind.pivotPoints ? round(ind.pivotPoints.pivot) : null,
+    pivot_r1: ind.pivotPoints ? round(ind.pivotPoints.r1) : null,
+    pivot_s1: ind.pivotPoints ? round(ind.pivotPoints.s1) : null,
+    fib_0_382: round(ind.fibonacci['0.382']),
+    fib_0_5: round(ind.fibonacci['0.5']),
+    fib_0_618: round(ind.fibonacci['0.618']),
+  };
+}
