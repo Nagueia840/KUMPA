@@ -30,3 +30,18 @@ LÍMITES:
 - No inventás datos. No prometés retornos.
 - No das consejo financiero vinculante: sugerís, el usuario opera.
 - Dudas legales o fiscales (CNV, BCRA, AFIP) → remitís a un profesional matriculado.`;
+
+/**
+ * Reglas multitemporal para el agente (FASE A: definidas; Fase B las activa
+ * agregándolas al system prompt cuando el contexto tenga datos por timeframe).
+ */
+export const MULTITF_INSTRUCTIONS = `
+REGLAS MULTITEMPORAL:
+- Cada número pertenece a SU timeframe: el "rsi" de "1W" no es el "rsi" de "4H". Nunca mezcles indicadores entre marcos.
+- Citá cada indicador con su marco (ej: "RSI diario 68, RSI 4H 55"). Usá los valores pre-cargados TAL CUAL.
+- "ultima_vela_estado: live" = la vela en curso: no la trates como cierre; los indicadores y el cierre corresponden a velas cerradas.
+- Si un timeframe pedido no tiene datos (no_disponible o "DATOS NO DISPONIBLES"), DECILO y NO lo reemplaces por otro marco: jamás presentes un análisis de otro timeframe como respuesta a lo que se pidió.
+- Si un indicador figura en "no_disponible", no lo cites.
+- superTrend_nivel/direccion es el SuperTrend canónico (bandas persistentes; la dirección solo cambia por cruce de precio). vwap_sesion es el VWAP de la sesión actual (ancla UTC, solo velas cerradas): si el precio está arriba del VWAP, la sesión es alcista; abajo, bajista.
+- Jerarquía de respuesta: contexto (marco mayor) → estructura → ejecución/timing → invalidación → riesgo. Sintetizá: solo los indicadores que cambian la lectura, no listas.`;
+

@@ -44,6 +44,41 @@ export function computeVWAP(candles: Candle[]): number | null {
   return sumV > 0 ? sumPV / sumV : null;
 }
 
+export type VwapAnchor = 'utc' | 'exchange' | 'argentina';
+
+/**
+ * Inicio de sesión (ms) según ancla:
+ * - 'utc' (default, política FASE E): 00:00Z — referencia neutral global para un
+ *   mercado 24/7 (BTC/crypto no tiene sesión de mercado tradicional).
+ * - 'exchange': 16:00Z (00:00 UTC+8) — día del exchange Bitget (coincide con el
+ *   roll de las velas diarias).
+ * - 'argentina': 03:00Z (00:00 America/Argentina/Buenos_Aires).
+ */
+export function vwapSessionStart(nowMs: number, anchor: VwapAnchor = 'utc'): number {
+  const offsetHours = anchor === 'argentina' ? -3 : anchor === 'exchange' ? 8 : 0;
+  const shifted = new Date(nowMs + offsetHours * 3_600_000);
+  shifted.setUTCHours(0, 0, 0, 0);
+  return shifted.getTime() - offsetHours * 3_600_000;
+}
+
+/**
+ * VWAP de sesión (FASE E): velas desde el inicio del ancla elegido.
+ * Solo velas CERRADAS (la vela viva se excluye: su volumen parcial sesgaría;
+ * el fetcher ya computa indicadores sobre velas cerradas). Si la sesión tiene
+ * <2 velas, cae a las últimas `fallback` (default 7) — documentado, nunca inventa.
+ */
+export function computeSessionVWAP(
+  candles: Candle[],
+  opts: { anchor?: VwapAnchor; nowMs?: number; fallback?: number } = {},
+): number | null {
+  if (candles.length === 0) return null;
+  const nowMs = opts.nowMs ?? Date.now();
+  const start = vwapSessionStart(nowMs, opts.anchor ?? 'utc');
+  const session = candles.filter((c) => c.time >= start);
+  const window = session.length >= 2 ? session : candles.slice(-(opts.fallback ?? 7));
+  return computeVWAP(window);
+}
+
 /** Media móvil simple (últimas `period` velas). */
 export function computeSMA(values: number[], period: number): number | null {
   if (values.length < period || period <= 0) return null;
@@ -238,6 +273,24 @@ export function computeATR(candles: Candle[], period = 14): number | null {
   return atr;
 }
 
+/**
+ * Serie de ATR (Wilder) por índice: out[k] = ATR correspondiente a la vela
+ * `candles[period + k]`. Usada por el SuperTrend canónico (necesita ATR[i]).
+ */
+function computeATRSeries(candles: Candle[], period: number): number[] {
+  const out: number[] = [];
+  const trs: number[] = [];
+  for (let i = 1; i < candles.length; i++) trs.push(trueRange(candles[i]!, candles[i - 1]!));
+  if (trs.length < period) return out;
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  out.push(atr);
+  for (let i = period; i < trs.length; i++) {
+    atr = (atr * (period - 1) + trs[i]!) / period;
+    out.push(atr);
+  }
+  return out;
+}
+
 /** Bollinger Bands. */
 export function computeBollinger(candles: Candle[], period = 20, mult = 2) {
   const closes = candles.map((c) => c.close);
@@ -362,8 +415,95 @@ export function computeParabolicSAR(candles: Candle[], step = 0.02, maxStep = 0.
   return sar;
 }
 
-/** SuperTrend (simplificado). */
-export function computeSuperTrend(candles: Candle[], period = 10, mult = 3) {
+/** Resultado del SuperTrend canónico: nivel, dirección y bandas finales persistentes. */
+export interface SuperTrendResult {
+  value: number;
+  direction: 'up' | 'down';
+  /** FinalUpper persistente (banda superior tras la lógica de persistencia). */
+  upperBand: number;
+  /** FinalLower persistente (banda inferior tras la lógica de persistencia). */
+  lowerBand: number;
+}
+
+/**
+ * SuperTrend CANÓNICO (FASE E).
+ * Serie completa: el último valor depende de bandas/tendencia previas (no se
+ * calcula de forma aislada). Fórmula:
+ *   HL2 = (high + low) / 2
+ *   BasicUpper[i] = HL2[i] + mult * ATR[i]
+ *   BasicLower[i] = HL2[i] - mult * ATR[i]
+ *   FinalUpper[i] = BasicUpper[i] si (BasicUpper[i] < FinalUpper[i-1] o close[i-1] > FinalUpper[i-1]); si no FinalUpper[i-1]
+ *   FinalLower[i] = BasicLower[i] si (BasicLower[i] > FinalLower[i-1] o close[i-1] < FinalLower[i-1]); si no FinalLower[i-1]
+ *   Si superTrend[i-1] == FinalUpper[i-1] (bajista): dirección = up si close[i] > FinalUpper[i]; si no down
+ *   Si no (alcista): dirección = down si close[i] < FinalLower[i]; si no up
+ *   superTrend[i] = FinalLower[i] si dirección up; si no FinalUpper[i]
+ * El flip solo ocurre cuando el precio cruza la banda correspondiente (nunca por
+ * close >= close previo como la versión simplificada).
+ */
+export function computeSuperTrend(
+  candles: Candle[],
+  period = 10,
+  mult = 3,
+): SuperTrendResult | null {
+  if (candles.length <= period) return null;
+  const atrSeries = computeATRSeries(candles, period);
+  if (atrSeries.length === 0) return null;
+
+  let prevFinalUpper = 0;
+  let prevFinalLower = 0;
+  let superTrend = 0;
+  let direction: 'up' | 'down' = 'up';
+
+  for (let i = period; i < candles.length; i++) {
+    const c = candles[i]!;
+    const atr = atrSeries[i - period]!;
+    const hl2 = (c.high + c.low) / 2;
+    const basicUpper = hl2 + mult * atr;
+    const basicLower = hl2 - mult * atr;
+
+    if (i === period) {
+      // Seed: sin valor previo se inicia con las bandas básicas en tendencia alcista.
+      prevFinalUpper = basicUpper;
+      prevFinalLower = basicLower;
+      direction = 'up';
+      superTrend = prevFinalLower;
+      continue;
+    }
+
+    const prev = candles[i - 1]!;
+    const finalUpper =
+      basicUpper < prevFinalUpper || prev.close > prevFinalUpper ? basicUpper : prevFinalUpper;
+    const finalLower =
+      basicLower > prevFinalLower || prev.close < prevFinalLower ? basicLower : prevFinalLower;
+
+    if (superTrend === prevFinalUpper) {
+      direction = c.close > finalUpper ? 'up' : 'down';
+    } else {
+      direction = c.close < finalLower ? 'down' : 'up';
+    }
+    superTrend = direction === 'up' ? finalLower : finalUpper;
+    prevFinalUpper = finalUpper;
+    prevFinalLower = finalLower;
+  }
+
+  return {
+    value: superTrend,
+    direction,
+    upperBand: prevFinalUpper,
+    lowerBand: prevFinalLower,
+  };
+}
+
+/**
+ * Versión SIMPLIFICADA anterior (FASE B). SOLO para comparación en tests —
+ * NO usar en producción (infería dirección por close >= close previo y no
+ * persistía bandas).
+ */
+export function computeSuperTrendLegacy(
+  candles: Candle[],
+  period = 10,
+  mult = 3,
+): { value: number; direction: 'up' | 'down' } | null {
   const atr = computeATR(candles, period);
   if (!atr) return null;
   const last = candles[candles.length - 1];
@@ -510,7 +650,7 @@ export interface TechnicalSnapshot {
   adx: { adx: number; plusDi: number; minusDi: number } | null;
   ichimoku: { tenkan: number; kijun: number; senkouA: number; senkouB: number } | null;
   parabolicSar: number | null;
-  superTrend: { value: number; direction: 'up' | 'down' } | null;
+  superTrend: SuperTrendResult | null;
   obv: number | null;
   mfi14: number | null;
   chaikinMF: number | null;

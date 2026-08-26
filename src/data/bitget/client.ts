@@ -148,7 +148,9 @@ export class BitgetClient {
   ): Promise<Candle[]> {
     const all: Candle[] = [];
     let endTime: number | undefined;
-    for (let page = 0; page < 5 && all.length < minCount; page++) {
+    // Hasta 6 páginas: 1D/1W llegan a su profundidad real (540/78); 1M a ~21.
+    // El loop corta apenas alcanza minCount, así que 1D (220) usa solo 3 páginas.
+    for (let page = 0; page < 6 && all.length < minCount; page++) {
       const batch = await this.getCandles(symbol, granularity, { limit: 90, productType, endTime });
       if (batch.length === 0) break;
       all.push(...batch);
