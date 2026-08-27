@@ -1,4 +1,5 @@
 import type { Bot } from 'grammy';
+import { withTimeout } from '../agents/fetch-multitf.js';
 
 /**
  * COLA DE UPDATES DE TELEGRAM — arquitectura asíncrona definitiva.
@@ -14,9 +15,21 @@ import type { Bot } from 'grammy';
  * por invocación. /api/cron solo hace safety-net + alertas.
  *
  * Idempotencia: update_id es autoridad (PK update_inbox + processed_updates).
+ *
+ * ANTI-HANG (fix diagnóstico interno): `processUpdate` corre bajo un presupuesto
+ * global (WORKER_BUDGET_MS, default 120s < 150s del límite free de la plataforma).
+ * Si CUALQUIER await interno cuelga (LLM, Telegram, Supabase, tools...), el
+ * presupuesto lo convierte en error controlado → finishPendingUpdate retry/fail.
+ * Sin esto, un hang dejaba la fila `processing` para siempre: el reciclaje de la
+ * instancia mataba el background task ANTES de que el timeout del SDK openai
+ * (default 10 min) pudiera abortar.
  */
 
 export const MAX_ATTEMPTS = 3;
+
+/** Presupuesto total por update: margen bajo el límite de wall-clock del plan
+ *  free (150s). Un update que excede esto se marca transitorio y reintenta. */
+export const WORKER_BUDGET_MS = 120_000;
 
 export interface PendingUpdate {
   updateId: number;
@@ -44,7 +57,9 @@ export interface UpdateQueueStore {
 /** Clasifica un error: transitorio (reintentable) vs permanente (no reintentar). */
 export function classifyError(msg: string): 'transient' | 'permanent' {
   const m = msg.toLowerCase();
-  if (/rate limit|quota|tokens per|429|timeout|fetch failed|econnrefused|etimedout|429 too many|tool call validation|spawn eperm/i.test(m)) {
+  // "timed out" es el mensaje exacto de APIConnectionTimeoutError (SDK openai):
+  // un LLM colgado que aborta por nuestro timeout DEBE ser transitorio.
+  if (/rate limit|quota|tokens per|429|timed out|timeout|fetch failed|econnrefused|etimedout|429 too many|tool call validation|spawn eperm/i.test(m)) {
     return 'transient';
   }
   if (/invalid update|payload|formato|api key|credential|missing.*(key|config)|configuration/i.test(m)) {
@@ -82,12 +97,19 @@ export async function enqueueUpdate(
  * IMPORTANTE (send failure): si Telegram recibió la respuesta pero el request
  * del worker falló después, el update NO se marca processed → retry → riesgo
  * inevitable de duplicado. Mitigación: preferir duplicado sobre pérdida.
+ *
+ * ANTI-HANG: `handleUpdate` corre bajo WORKER_BUDGET_MS. Un await colgado
+ * (provider LLM sin responder, Telegram, Supabase, tool externa) NO puede dejar
+ * la fila `processing` para siempre: el presupuesto lo convierte en error
+ * transitorio y `finishPendingUpdate` reintenta/falla con `last_error` real.
  */
 export async function processUpdate(
   bot: Pick<Bot, 'handleUpdate'>,
   store: UpdateQueueStore,
   pending: PendingUpdate,
+  opts: { budgetMs?: number } = {},
 ): Promise<boolean> {
+  const budgetMs = opts.budgetMs ?? WORKER_BUDGET_MS;
   let update: unknown;
   try {
     update = JSON.parse(pending.payload);
@@ -99,13 +121,19 @@ export async function processUpdate(
     return false;
   }
   try {
-    await bot.handleUpdate(update as never);
+    console.log(`[worker-stage] update=${pending.updateId} stage=handle_start`);
+    const t0 = Date.now();
+    // Presupuesto global: SIEMPRE hay un límite, aunque un await interno cuelgue.
+    await withTimeout(bot.handleUpdate(update as never), budgetMs, `update ${pending.updateId}`);
+    console.log(`[worker-stage] update=${pending.updateId} stage=handle_done ms=${Date.now() - t0}`);
     await store.finishPendingUpdate(pending.updateId, true);
+    console.log(`[worker-stage] update=${pending.updateId} stage=finish_ok`);
     return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const kind = classifyError(msg);
     console.warn(`[queue] update ${pending.updateId} falló (intento ${pending.attempts}, ${kind}): ${msg}`);
+    console.log(`[worker-stage] update=${pending.updateId} stage=finish_fail kind=${kind}`);
     await store.finishPendingUpdate(pending.updateId, false, { error: msg, permanent: kind === 'permanent' });
     return false;
   }

@@ -1,6 +1,8 @@
+import { Buffer } from 'node:buffer';
 import type { Bot } from 'grammy';
 import type { Deps } from '../../deps.js';
 import { loadEnv } from '../../config/env.js';
+import { fetchWithTimeout } from '../../data/http.js';
 import { stripReasoning } from '../../llm/index.js';
 
 /**
@@ -38,7 +40,7 @@ export function registerVision(bot: Bot, deps: Deps): void {
         if (!file.file_path) continue;
         const url = `https://api.telegram.org/file/bot${loadEnv().TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 
-        const imgRes = await fetch(url);
+        const imgRes = await fetchWithTimeout(url);
         if (!imgRes.ok) continue;
         const buf = Buffer.from(await imgRes.arrayBuffer());
         // Forzar mime JPEG (las fotos de Telegram son JPEG)

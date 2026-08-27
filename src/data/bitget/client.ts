@@ -1,4 +1,5 @@
 import { buildSignature, encryptPassphrase } from './sign.js';
+import { fetchWithTimeout } from '../http.js';
 import type {
   BitgetConfig,
   Candle,
@@ -56,7 +57,7 @@ export class BitgetClient {
       headers['ACCESS-PASSPHRASE'] = encryptPassphrase(this.config.secretKey, this.config.passphrase);
     }
 
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: opts.method,
       headers,
       body: opts.method === 'POST' ? bodyString : undefined,

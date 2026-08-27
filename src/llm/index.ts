@@ -18,6 +18,17 @@ interface ChainEntry {
 }
 
 /**
+ * Timeout por llamada LLM (30s). El SDK openai trae DEFAULT_TIMEOUT=600000
+ * (10 min), pero el Edge Worker (plan free) recicla la instancia a los ~150s
+ * de wall-clock: un provider que cuelga dejaría la llamada pendiente hasta que
+ * la plataforma mate la instancia SIN que `finishPendingUpdate` corra (la fila
+ * queda `processing` para siempre). Con 30s el hang se convierte en error
+ * controlado (timeout → fallback → retry/failed) y deja presupuesto para el
+ * resto del pipeline dentro de 150s.
+ */
+export const LLM_TIMEOUT_MS = 30_000;
+
+/**
  * Cliente LLM OpenAI-compatible con FALLBACK automático de proveedor:
  * ante 429 (rate limit), 5xx o errores de auth, prueba el siguiente
  * proveedor de la cadena (ej. Groq → OpenRouter :free → DeepSeek).
@@ -25,19 +36,36 @@ interface ChainEntry {
 export class LLMClient {
   private chain: ChainEntry[];
   readonly settings: LLMSettings;
+  private readonly timeoutMs: number;
 
-  constructor(primary: LLMSettings, fallbacks: LLMSettings[] = []) {
+  constructor(
+    primary: LLMSettings,
+    fallbacks: LLMSettings[] = [],
+    opts: { timeoutMs?: number } = {},
+  ) {
     if (!primary.apiKey) {
       throw new Error(
         'Falta LLM_API_KEY. Agregala en .env o en la tabla app_settings de Supabase (llm_api_key).',
       );
     }
     this.settings = primary;
+    this.timeoutMs = opts.timeoutMs ?? LLM_TIMEOUT_MS;
     this.chain = [this.buildEntry(primary), ...fallbacks.filter((f) => f.apiKey).map((f) => this.buildEntry(f))];
   }
 
   private buildEntry(s: LLMSettings): ChainEntry {
-    return { client: new OpenAI({ baseURL: s.baseURL, apiKey: s.apiKey }), settings: s };
+    // timeout: aborta la llamada colgada (AbortController del SDK) ANTES del
+    // reciclaje de la plataforma. maxRetries: 0 → el fallback entre proveedores
+    // es el reintento (el retry interno del SDK multiplicaría el tiempo muerto).
+    return {
+      client: new OpenAI({
+        baseURL: s.baseURL,
+        apiKey: s.apiKey,
+        timeout: this.timeoutMs,
+        maxRetries: 0,
+      }),
+      settings: s,
+    };
   }
 
   /** Cliente del proveedor primario (compat). */
@@ -131,7 +159,8 @@ export function shouldFallbackProvider(err: unknown): boolean {
     status === 403 ||
     status === 429 ||
     (status !== undefined && status >= 500) ||
-    /rate limit|quota|tokens per (day|minute)|authentication|fetch failed|ECONNREFUSED|ETIMEDOUT|timeout/i.test(
+    // "timed out" (APIConnectionTimeoutError del SDK openai) + variantes de red
+    /rate limit|quota|tokens per (day|minute)|authentication|fetch failed|ECONNREFUSED|ETIMEDOUT|timed out|timeout/i.test(
       msg,
     )
   );

@@ -28,14 +28,20 @@ export async function processOneUpdate(
   deps: WorkerDeps,
   updateId: number,
 ): Promise<WorkerResult> {
+  const t0 = Date.now();
+  console.log(`[worker-stage] update=${updateId} stage=start`);
   if (await deps.store.isUpdateProcessed(updateId)) return 'ignored';
+  console.log(`[worker-stage] update=${updateId} stage=idempotency_ok ms=${Date.now() - t0}`);
 
   const pending = await deps.store.claimPendingUpdate(updateId);
   if (!pending) return 'ignored'; // ya lo tomó otro worker o no está pendiente
+  console.log(`[worker-stage] update=${updateId} stage=claim_ok ms=${Date.now() - t0}`);
 
   let bot;
   try {
+    console.log(`[worker-stage] update=${updateId} stage=boot_start`);
     bot = await deps.boot();
+    console.log(`[worker-stage] update=${updateId} stage=boot_done ms=${Date.now() - t0}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[worker] boot falló para update ${updateId} (permanente): ${msg}`);
@@ -44,5 +50,6 @@ export async function processOneUpdate(
   }
 
   const ok = await processUpdate(bot, deps.store, pending);
+  console.log(`[worker-stage] update=${updateId} stage=done result=${ok ? 'processed' : 'failed'} total_ms=${Date.now() - t0}`);
   return ok ? 'processed' : 'failed';
 }

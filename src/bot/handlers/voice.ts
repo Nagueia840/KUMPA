@@ -1,6 +1,7 @@
 import type { Bot, Context } from 'grammy';
 import type { Deps } from '../../deps.js';
 import { loadEnv } from '../../config/env.js';
+import { fetchWithTimeout } from '../../data/http.js';
 import { handleMessage } from '../../agents/agent.js';
 import { replyLong } from '../../utils/telegram.js';
 import { normalizeTranscript } from '../../utils/transcript.js';
@@ -35,7 +36,7 @@ export function registerVoice(bot: Bot, deps: Deps): void {
       let text = '';
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          const audioRes = await fetch(url);
+          const audioRes = await fetchWithTimeout(url);
           if (!audioRes.ok) throw new Error('HTTP ' + audioRes.status);
           const blob = new Blob([await audioRes.arrayBuffer()], { type: 'audio/ogg' });
           const fileObj = new File([blob], 'voice.ogg', { type: 'audio/ogg' });

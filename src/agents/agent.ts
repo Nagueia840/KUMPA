@@ -63,12 +63,14 @@ const EVENT_TIMEOUT_MS = 4000;
 
 /** Procesa un mensaje conversacional con function calling. */
 export async function handleMessage(deps: Deps, chatId: number, userText: string): Promise<string> {
+  const t0 = Date.now();
   if (!deps.llm) {
     return 'Perdón, todavía no tengo el LLM configurado.';
   }
 
   // Memoria de contexto: últimas conversaciones (si hay Supabase, persiste)
   const history = await deps.memory.getRecentConversations(chatId, 6);
+  console.log(`[agent-stage] chat=${chatId} stage=history_done ms=${Date.now() - t0}`);
 
   // PRE-FETCH MULTITEMPORAL (Fase B): datos reales por timeframe para TODOS los
   // tickers mencionados. Se saltea en pedidos de alerta (lo resuelve set_*_alert).
@@ -89,12 +91,14 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
       : Promise.resolve(unverifiableEvent(eventInfo, 'sin EXA_API_KEY'))
     : Promise.resolve(null);
 
+  const tFetch = Date.now();
   const [preFetched, eventVerification] = await Promise.all([
     tickers.length > 0 && timeframes.length > 0
       ? fetchMultiTfData(deps, tickers, timeframes)
       : Promise.resolve<MultiTfContext>({}),
     eventPromise,
   ]);
+  console.log(`[agent-stage] chat=${chatId} stage=market_fetch_done ms=${Date.now() - tFetch}`);
 
   // Las reglas multitemporal solo se activan si hay al menos un TF con datos válidos.
   const hasValidTfData = Object.values(preFetched).some(
@@ -137,6 +141,8 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
     const allowTools = step < MAX_TOOL_ROUNDS;
 
     let res;
+    const tLlm = Date.now();
+    console.log(`[agent-stage] chat=${chatId} stage=llm_start step=${step} tools=${allowTools}`);
     try {
       res = allowTools
         ? await deps.llm.completionsCreate({
@@ -157,6 +163,7 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
             max_tokens: 2500,
           });
     } catch (err) {
+      console.warn(`[agent-stage] chat=${chatId} stage=llm_error step=${step} ms=${Date.now() - tLlm}: ${err instanceof Error ? err.message : String(err)}`);
       // Defensa (bug detectado en auditoría final): si el modelo emite argumentos
       // de tool inválidos (400 de validación de la API, ej web_search sin query)
       // o insiste en llamar tools con tool_choice 'none', se le pide corregir y
@@ -173,6 +180,7 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
       }
       throw err;
     }
+    console.log(`[agent-stage] chat=${chatId} stage=llm_done step=${step} ms=${Date.now() - tLlm}`);
 
     const msg = res.choices[0]?.message;
     if (!msg) return 'No pude procesar tu mensaje.';
@@ -204,6 +212,8 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
     const text = stripReasoning(msg.content ?? '').trim();
     if (text) {
       const guardClaims = withEventClaims(withToolClaims(claimSet, toolClaims), eventClaims);
+      const tGuard = Date.now();
+      console.log(`[agent-stage] chat=${chatId} stage=guard_start`);
       const guarded = await guardedFinalize(text, guardClaims, async () => {
         const res2 = await deps.llm!.completionsCreate({
           model: deps.llm!.settings.model,
@@ -215,6 +225,7 @@ export async function handleMessage(deps: Deps, chatId: number, userText: string
         });
         return stripReasoning(res2.choices[0]?.message?.content ?? '').trim();
       });
+      console.log(`[agent-stage] chat=${chatId} stage=guard_done status=${guarded.status} ms=${Date.now() - tGuard}`);
       if (guarded.status === 'ok') return guarded.text;
       console.warn(`[guard] respuesta bloqueada: ${guarded.reason}`);
       return GUARD_REFUSAL_TEXT;
