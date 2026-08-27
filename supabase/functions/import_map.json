@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "grammy": "npm:grammy@1.30.0",
+    "openai": "npm:openai@4.69.0",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.45.0",
+    "viem": "npm:viem@2.21.0",
+    "zod": "npm:zod@3.23.8"
+  }
+}
