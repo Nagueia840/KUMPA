@@ -1,0 +1,14 @@
+# Supabase Edge Functions configuration (kumpa-worker).
+# Mecanismo oficial vigente: docs/supabase.com/docs/guides/functions/function-configuration
+#
+# verify_jwt=false: el platform NO exige JWT de Supabase (el Database Webhook
+# no envía uno). La autenticación real la hace el handler con
+# `Authorization: Bearer KUMPA_WORKER_SECRET` (fail-closed).
+#
+# entrypoint: apunta al bundle autocontenido generado por
+# `node scripts/build-kumpa-worker.mjs` (resuelve el closure local y los
+# specifiers `.js`->`.ts` que el bundler eszip de Deno NO resuelve).
+# El source canónico queda en index.ts (repo); el deploy usa el bundle.
+[functions.kumpa-worker]
+verify_jwt = false
+entrypoint = './functions/kumpa-worker/index.bundle.js'

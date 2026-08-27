@@ -8,3 +8,6 @@ dist/
 .DS_Store
 coverage/
 tsconfig.*.json
+PROYECTO-ESTADO.md
+supabase/.temp/
+supabase/functions/kumpa-worker/index.bundle.js
