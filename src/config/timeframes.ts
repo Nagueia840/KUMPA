@@ -47,29 +47,47 @@ export const LAYER_BY_TF: Record<TfLabel, Layer> = {
   '5m': 'ejecucion',
 };
 
-/** Indicadores por capa (subconjunto del motor existente; sin listas interminables). */
+/** Indicadores por capa (subconjunto del motor existente; sin listas interminables).
+ *  FASE F: se amplía para exponer al LLM los indicadores que el motor YA calcula
+ *  pero se descartaban (keltner, donchian, hv, stochastic, cci, cmf, ad, fractals,
+ *  fib completo, pivots R2/S2) — aprovecha capacidad certificada sin duplicar.
+ *  Restricciones respetadas (tests existentes): contexto SIN obv/vwap_sesion/ema9;
+ *  estructura SIN sma200/obv; ejecución SIN macd/mfi/sma200. */
 export const INDICATORS_BY_LAYER: Record<Layer, readonly string[]> = {
   contexto: [
-    'ema20', 'sma50', 'sma100', 'sma200', 'rsi', 'macd', 'atr', 'bollinger',
-    'adx', 'ichimoku', 'superTrend', 'pivotes', 'fib',
+    'ema20', 'sma20', 'sma50', 'sma100', 'sma200', 'ema50', 'wma20', 'hma20', 'vwma20',
+    'rsi', 'macd', 'stochastic', 'stochasticRsi', 'cci', 'awesomeOscillator', 'mfi',
+    'atr', 'bollinger', 'keltner', 'donchian', 'hv',
+    'adx', 'ichimoku', 'parabolicSar', 'superTrend', 'pivotes', 'fib', 'fractals',
+    'vwap_semanal',
   ],
   estructura: [
-    'ema20', 'vwap_sesion', 'rsi', 'macd', 'atr', 'bollinger', 'superTrend',
-    'pivotes', 'mfi',
+    'ema20', 'vwap_sesion', 'vwap_semanal', 'rsi', 'macd', 'stochastic', 'stochasticRsi',
+    'cci', 'awesomeOscillator', 'mfi', 'atr', 'bollinger', 'keltner', 'donchian', 'hv',
+    'adx', 'parabolicSar', 'superTrend', 'pivotes', 'fib', 'fractals',
   ],
   ejecucion: [
-    'vwap_sesion', 'ema9', 'ema20', 'rsi', 'atr', 'bollinger', 'williamsR',
-    'roc', 'obv', 'superTrend',
+    'vwap_sesion', 'vwap_semanal', 'ema9', 'ema20', 'rsi', 'stochastic', 'stochasticRsi',
+    'cci', 'awesomeOscillator', 'williamsR', 'roc', 'atr', 'bollinger', 'keltner',
+    'donchian', 'superTrend', 'obv', 'cmf', 'accumulationDistribution', 'fractals',
   ],
 };
 
 /** Velas mínimas requeridas por indicador (mismo criterio que src/data/indicators.ts). */
 export const INDICATOR_MIN_CANDLES: Record<string, number> = {
   sma20: 20, sma50: 50, sma100: 100, sma200: 200,
-  ema9: 9, ema20: 20,
+  ema9: 9, ema20: 20, ema50: 50,
+  wma20: 20, hma20: 24, vwma20: 20,
   rsi: 15, macd: 35, atr: 15, bollinger: 20, adx: 28, ichimoku: 52,
-  superTrend: 12, vwap_sesion: 1, pivotes: 2, fib: 2,
+  superTrend: 12, vwap_sesion: 1, vwap_semanal: 2, pivotes: 2, fib: 2,
   mfi: 15, williamsR: 15, roc: 11, obv: 2,
+  stochastic: 17, stochasticRsi: 31, cci: 20, awesomeOscillator: 34,
+  keltner: 20, donchian: 20, hv: 21, parabolicSar: 2,
+  cmf: 20, accumulationDistribution: 2, fractals: 5,
+  // Bollinger Bandwidth: banda actual con 21 velas; el percentil/estado contra
+  // historial necesita MIN_BANDWIDTH_HISTORY(50) ventanas → 20+50 = 70 velas.
+  bollinger_bandwidth: 21, bollinger_bandwidth_pctil: 70, bollinger_estado: 70,
+  bollinger_squeeze: 21,
 };
 
 export type Intent =

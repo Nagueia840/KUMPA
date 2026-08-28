@@ -47,21 +47,37 @@ const LABELS: Record<string, LabelDef> = {
   sma200: { match: ['\\bsma200\\b'], fields: ['sma200'] },
   ema20: { match: ['\\bema20\\b', '\\bema 20\\b', 'media exponencial 20'], fields: ['ema20'] },
   ema9: { match: ['\\bema9\\b', '\\bema 9\\b'], fields: ['ema9'] },
+  ema50: { match: ['\\bema50\\b', '\\bema 50\\b'], fields: ['ema50'] },
+  wma20: { match: ['\\bwma20\\b', '\\bwma 20\\b'], fields: ['wma20'] },
+  hma20: { match: ['\\bhma20\\b', '\\bhma 20\\b'], fields: ['hma20'] },
+  vwma20: { match: ['\\bvwma20\\b', '\\bvwma 20\\b'], fields: ['vwma20'] },
   macd: { match: ['\\bmacd\\b'], fields: ['macd_linea', 'macd_senal', 'macd_histograma'] },
   atr: { match: ['\\batr\\b'], fields: ['atr'] },
-  bollinger: { match: ['\\bbollinger\\b', '\\bbandas\\b'], fields: ['bollinger_inferior', 'bollinger_media', 'bollinger_superior'] },
+  bollinger: { match: ['\\bbollinger\\b', '\\bbandas\\b', '\\bbandwidth\\b'], fields: ['bollinger_inferior', 'bollinger_media', 'bollinger_superior', 'bollinger_bandwidth_pct', 'bollinger_bandwidth_pctil'] },
+  squeeze: { match: ['\\bsqueeze\\b', '\\bcompresi[oó]n\\b', '\\bcontracci[oó]n\\b', '\\bexpansi[oó]n\\b'], fields: ['bollinger_bandwidth_pct', 'bollinger_bandwidth_pctil'] },
+  keltner: { match: ['\\bkeltner\\b', '\\bcanales keltner\\b'], fields: ['keltner_inferior', 'keltner_media', 'keltner_superior'] },
+  donchian: { match: ['\\bdonchian\\b', '\\bcanales donchian\\b'], fields: ['donchian_inferior', 'donchian_superior'] },
+  hv: { match: ['\\bvolatilidad hist[oó]rica\\b', '\\bhv\\b', '\\bhistorical volatility\\b'], fields: ['hv'] },
   superTrend: { match: ['supertrend'], fields: ['superTrend_nivel'] },
   adx: { match: ['\\badx\\b'], fields: ['adx'] },
   mfi: { match: ['\\bmfi\\b', 'flujo de dinero'], fields: ['mfi'] },
   williamsR: { match: ['williams'], fields: ['williamsR'] },
   roc: { match: ['\\broc\\b'], fields: ['roc'] },
   obv: { match: ['\\bobv\\b'], fields: ['obv'] },
-  vwap: { match: ['\\bvwap\\b'], fields: ['vwap_sesion'] },
+  cmf: { match: ['\\bcmf\\b', 'chaikin money flow'], fields: ['cmf'] },
+  adLine: { match: ['\\b(?:l[ií]nea )?a\\/d\\b', 'accumulation distribution', 'acumulaci[oó]n\\/distribuci[oó]n'], fields: ['accumulationDistribution'] },
+  stochastic: { match: ['\\bstochastic\\b', '\\bstoc[aá]stico\\b', '\\b%k\\b', '\\b%k\\b', '\\bstoch\\b'], fields: ['stochastic_k', 'stochastic_d'] },
+  stochasticRsi: { match: ['\\bstoch rsi\\b', '\\bstochastic rsi\\b', '\\brsi estoc[aá]stico\\b'], fields: ['stochasticRsi'] },
+  cci: { match: ['\\bcci\\b', 'commodity channel'], fields: ['cci'] },
+  awesomeOsc: { match: ['\\bawesome oscillator\\b', '\\boscillator awesome\\b', '\\bao\\b'], fields: ['awesomeOscillator'] },
+  parabolicSar: { match: ['\\bparabolic sar\\b', '\\bsar parab[oó]lico\\b', '\\bsar\\b'], fields: ['parabolicSar'] },
+  vwap: { match: ['\\bvwap\\b'], fields: ['vwap_sesion', 'vwap_semanal'] },
   pivot: { match: ['\\bpivots?\\b', '\\bpivotes?\\b'], fields: ['pivot_p', 'pivot_r1', 'pivot_s1', 'pivot_r2', 'pivot_s2'] },
   soporte: { match: ['\\bsoportes?\\b'], fields: ['pivot_s1', 'pivot_s2'] },
   resistencia: { match: ['\\bresistencias?\\b'], fields: ['pivot_r1', 'pivot_r2'] },
-  fib: { match: ['\\bfib\\b', '\\bfibonacci\\b'], fields: ['fib_0_382', 'fib_0_5', 'fib_0_618'] },
+  fib: { match: ['\\bfib\\b', '\\bfibonacci\\b'], fields: ['fib_0_236', 'fib_0_382', 'fib_0_5', 'fib_0_618', 'fib_0_786'] },
   ichimoku: { match: ['\\bichimoku\\b', '\\btenkan\\b', '\\bkijun\\b'], fields: ['ichimoku_tenkan', 'ichimoku_kijun'] },
+  fractal: { match: ['\\bfractales?\\b'], fields: ['fractal_alto_reciente', 'fractal_bajo_reciente'] },
   precio: { match: ['\\bprecios?\\b', 'cotizaci[oó]n(es)?'], fields: ['precio', 'cierre', 'viva_close'] },
   funding: { match: ['\\bfunding\\b'], fields: ['funding_pct'] },
   cierre: { match: ['\\bcierres?\\b', '\\bclose\\b'], fields: ['cierre'] },
@@ -314,4 +330,16 @@ export function validateReply(text: string, claims: ClaimSet): ValidationResult 
     }
   }
   return { valid: violations.length === 0, violations };
+}
+
+/**
+ * F.3.1.2 — ¿un número de mercado está respaldado por ALGÚN claim (con su
+ * tolerancia por campo)? Reutilizado por la capa de reparación determinista
+ * (deterministic-repair) para decidir si una cifra puede permanecer en R2.
+ */
+export function isMarketNumberBacked(value: number, claims: ClaimSet): boolean {
+  for (const c of claims.claims) {
+    if (Math.abs(value - c.value) <= toleranceFor(c)) return true;
+  }
+  return false;
 }

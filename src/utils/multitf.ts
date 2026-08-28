@@ -67,6 +67,20 @@ export interface TfBlock {
   indicadores: Record<string, unknown>;
   /** Vela en curso aparte (solo si la última vela es live). */
   vela_viva?: VelaViva;
+  /**
+   * ROL del SuperTrend canónico (FASE E): si dirección='up' el nivel es la
+   * banda inferior (SOPORTE); si 'down' es la banda superior (RESISTENCIA).
+   * Metadata derivada para que el LLM no infiera el rol por su cuenta.
+   */
+  superTrend_rol?: 'soporte' | 'resistencia';
+  /**
+   * Posición de la vela viva (o última cerrada) vs el cierre previo:
+   * - 'above': TODO el rango (low) quedó por encima del cierre anterior.
+   * - 'below': TODO el rango (high) quedó por debajo del cierre anterior.
+   * - 'mixed': el rango cruza el cierre anterior (ni todo arriba ni todo abajo).
+   * Prohíbe frases tipo "vela entera por encima" cuando low <= cierre previo.
+   */
+  vela_vs_cierre_previo?: 'above' | 'below' | 'mixed';
 }
 
 export interface MultiTfSymbolData {
@@ -80,6 +94,11 @@ export interface MultiTfSymbolData {
   precio?: number;
   funding_pct?: string;
   funding_ts_ms?: number;
+  /**
+   * QUOTE ASSET del instrumento (ETHUSDT/BTCUSDT → 'USDT'). Todos los niveles de
+   * precio derivados llevan ESTA unidad — NO 'USD' (USDT ≠ USD, sin paridad).
+   */
+  quoteAsset?: string;
   timeframes?: Partial<Record<TfLabel, TfBlock>>;
 }
 
@@ -170,6 +189,7 @@ export function buildMultiTfSymbol(
     fundingTsMs?: number;
     market?: string;
     exchange?: string;
+    quoteAsset?: string;
   } = {},
 ): MultiTfSymbolData {
   return {
@@ -180,6 +200,7 @@ export function buildMultiTfSymbol(
     precio: opts.price,
     funding_pct: opts.fundingPct,
     funding_ts_ms: opts.fundingTsMs,
+    quoteAsset: opts.quoteAsset ?? 'USDT',
     timeframes: {},
   };
 }

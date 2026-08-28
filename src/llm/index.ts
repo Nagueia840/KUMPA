@@ -28,6 +28,13 @@ interface ChainEntry {
  */
 export const LLM_TIMEOUT_MS = 30_000;
 
+/** Info del proveedor/modelo que atendió una llamada (observabilidad, sin secretos). */
+export interface LLMProviderInfo {
+  provider: string;
+  model: string;
+  attempt: number;
+}
+
 /**
  * Cliente LLM OpenAI-compatible con FALLBACK automático de proveedor:
  * ante 429 (rate limit), 5xx o errores de auth, prueba el siguiente
@@ -74,12 +81,20 @@ export class LLMClient {
   }
 
   /** Chat completions con fallback automático entre proveedores. */
-  async completionsCreate(params: CreateParams) {
+  async completionsCreate(
+    params: CreateParams,
+    opts: { onProvider?: (info: LLMProviderInfo) => void } = {},
+  ) {
     let lastError: unknown = new Error('Sin proveedores LLM disponibles');
+    let attempt = 0;
     for (const entry of this.chain) {
+      attempt++;
       try {
         const model = this.mapModel(params.model, entry.settings);
-        return await entry.client.chat.completions.create({ ...params, model });
+        const res = await entry.client.chat.completions.create({ ...params, model });
+        // Observabilidad (F.3.1.1): qué proveedor/modelo atendió realmente.
+        opts.onProvider?.({ provider: entry.settings.provider, model, attempt });
+        return res;
       } catch (err) {
         lastError = err;
         if (!shouldFallbackProvider(err)) throw err;

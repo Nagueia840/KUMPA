@@ -71,6 +71,105 @@ export function buildAllowedClaims(ctx: MultiTfContext): ClaimSet {
   return { claims, bySymbol: index(claims), isEmpty: claims.length === 0 };
 }
 
+/**
+ * MAPEO TOOL → VOCABULARIO CANÓNICO (FIX -2470 / falso positivo del guard).
+ *
+ * `collectToolResultClaims` recorría el resultado de la tool y etiquetaba cada
+ * número con `tool:<path>` (ej. `tool:priceUsd`, `tool:indicators.macd_histograma`).
+ * El validator (validator.ts) solo reconoce campos canónicos en LABELS[].fields
+ * ('precio', 'funding_pct', 'macd_linea', 'rsi', ...) → un número LEGÍTIMO de
+ * get_market_snapshot / get_technical_indicators se marcaba "sin respaldo"
+ * (GUARD_REFUSAL_TEXT en producción: -2470 = macd_histograma real de ETH).
+ *
+ * SOLUCIÓN: normalizar en el borde. Los campos CONOCIDOS se mapean al field
+ * canónico que el validator ya entiende; los campos desconocidos conservan
+ * `tool:<path>` (sin respaldo) → el guard sigue bloqueando números inventados.
+ * `source: 'tool'` se mantiene: la trazabilidad de procedencia queda intacta.
+ */
+const TOOL_CANONICAL_FIELDS: Record<string, string> = {
+  // get_market_snapshot / get_price (renombrados en certificación: price/volume24h,
+  // con quoteAsset explícito — USDT ≠ USD; se mantienen los viejos por compat)
+  price: 'precio',
+  priceUsd: 'precio',
+  fundingBitgetPct: 'funding_pct',
+  fundingBinancePct: 'funding_pct',
+  fundingBybitPct: 'funding_pct',
+  fundingSpreadBps: 'funding_spread_bps',
+  openInterestBitget: 'open_interest',
+  openInterestBybit: 'open_interest',
+  annualizedFundingPct: 'funding_anualizado_pct',
+  premiumPct: 'premium_pct',
+  volume24h: 'volumen_24h',
+  volume24hUsd: 'volumen_24h',
+  btcDominancePct: 'dominancia_btc',
+  globalCapUsd: 'market_cap_global',
+  // get_technical_indicators → computeAllIndicators (snapshot técnico completo)
+  'indicators.price': 'precio',
+  'indicators.precio': 'precio',
+  'indicators.vwapWeekly': 'vwap_semanal',
+  'indicators.sma20': 'sma20',
+  'indicators.sma50': 'sma50',
+  'indicators.sma100': 'sma100',
+  'indicators.sma200': 'sma200',
+  'indicators.ema20': 'ema20',
+  'indicators.ema50': 'ema50',
+  'indicators.wma20': 'wma20',
+  'indicators.hma20': 'hma20',
+  'indicators.vwma20': 'vwma20',
+  'indicators.rsi14': 'rsi',
+  'indicators.macd.macd': 'macd_linea',
+  'indicators.macd.signal': 'macd_senal',
+  'indicators.macd.histogram': 'macd_histograma',
+  'indicators.stochastic.k': 'stochastic_k',
+  'indicators.stochastic.d': 'stochastic_d',
+  'indicators.stochasticRsi': 'stochasticRsi',
+  'indicators.cci': 'cci',
+  'indicators.awesomeOscillator': 'awesomeOscillator',
+  'indicators.atr14': 'atr',
+  'indicators.bollinger.lower': 'bollinger_inferior',
+  'indicators.bollinger.middle': 'bollinger_media',
+  'indicators.bollinger.upper': 'bollinger_superior',
+  'indicators.bollingerBandwidth': 'bollinger_bandwidth_pct',
+  'indicators.bollingerBandwidthPercentile': 'bollinger_bandwidth_pctil',
+  'indicators.keltner.lower': 'keltner_inferior',
+  'indicators.keltner.middle': 'keltner_media',
+  'indicators.keltner.upper': 'keltner_superior',
+  'indicators.donchian.lower': 'donchian_inferior',
+  'indicators.donchian.upper': 'donchian_superior',
+  'indicators.historicalVolatility': 'hv',
+  'indicators.adx.adx': 'adx',
+  'indicators.adx.plusDi': 'di_positivo',
+  'indicators.adx.minusDi': 'di_negativo',
+  'indicators.ichimoku.tenkan': 'ichimoku_tenkan',
+  'indicators.ichimoku.kijun': 'ichimoku_kijun',
+  'indicators.parabolicSar': 'parabolicSar',
+  'indicators.superTrend.value': 'superTrend_nivel',
+  'indicators.superTrend.direction': 'superTrend_direccion',
+  'indicators.mfi14': 'mfi',
+  'indicators.williamsR': 'williamsR',
+  'indicators.roc10': 'roc',
+  'indicators.obv': 'obv',
+  'indicators.chaikinMF': 'cmf',
+  'indicators.accumulationDistribution': 'accumulationDistribution',
+  'indicators.fibonacci.0.236': 'fib_0_236',
+  'indicators.fibonacci.0.382': 'fib_0_382',
+  'indicators.fibonacci.0.5': 'fib_0_5',
+  'indicators.fibonacci.0.618': 'fib_0_618',
+  'indicators.fibonacci.0.786': 'fib_0_786',
+  'indicators.pivotPoints.pivot': 'pivot_p',
+  'indicators.pivotPoints.r1': 'pivot_r1',
+  'indicators.pivotPoints.s1': 'pivot_s1',
+  'indicators.pivotPoints.r2': 'pivot_r2',
+  'indicators.pivotPoints.s2': 'pivot_s2',
+  'indicators.fractals.fractalHighs': 'fractal_alto_reciente',
+  'indicators.fractals.fractalLows': 'fractal_bajo_reciente',
+};
+
+/** Normaliza el path de un número de tool al field canónico del validator. */
+function canonicalToolField(path: string): string {
+  return TOOL_CANONICAL_FIELDS[path] ?? (path ? `tool:${path}` : 'tool:value');
+}
+
 /** Extrae claims de un resultado de herramienta (datos reales obtenidos). */
 export function collectToolResultClaims(result: unknown, fallbackSymbol: string): MarketClaim[] {
   const out: MarketClaim[] = [];
@@ -80,7 +179,7 @@ export function collectToolResultClaims(result: unknown, fallbackSymbol: string)
 
   const walk = (node: unknown, path: string): void => {
     if (typeof node === 'number' && Number.isFinite(node)) {
-      out.push({ symbol, timeframe, field: path ? `tool:${path}` : 'tool:value', value: node, source: 'tool' });
+      out.push({ symbol, timeframe, field: canonicalToolField(path), value: node, source: 'tool' });
       return;
     }
     if (Array.isArray(node)) {

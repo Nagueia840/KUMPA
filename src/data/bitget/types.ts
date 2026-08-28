@@ -34,6 +34,8 @@ export interface Ticker {
 export interface FundingRate {
   symbol: string;
   fundingRate: string;
+  /** Intervalo del funding en HORAS: 1 | 2 | 4 | 8 (v2 current-fund-rate). */
+  fundingRateInterval?: string;
   nextUpdate?: string; // current-fund-rate (ms)
   fundingTime?: string; // history-fund-rate (ms)
 }

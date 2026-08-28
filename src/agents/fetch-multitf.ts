@@ -1,7 +1,7 @@
 import type { BitgetClient } from '../data/bitget/index.js';
 import { parseCandle } from '../data/indicators.js';
 import { computeLayerIndicators } from '../data/layer-indicators.js';
-import { toPerpPair } from '../data/snapshot.js';
+import { quoteAssetFromPair, toPerpPair } from '../data/snapshot.js';
 import { TF_META, type TfLabel } from '../config/timeframes.js';
 import {
   attachTfBlock,
@@ -163,12 +163,35 @@ async function fetchTfBlock(
       }
     : undefined;
 
-  return buildTfBlock(tf, candles, now, {
+  const block = buildTfBlock(tf, candles, now, {
     closedCount: closed.length,
     indicadores,
     velaViva,
-    cierreUltimaCerrada,
+    cierreUltimaCerrada: cierreUltimaCerrada,
   });
+
+  // METADATA DERIVADA (FASE E — anti-interpretación libre del LLM):
+  // - superTrend_rol: 'up' → el nivel es la banda inferior (SOPORTE);
+  //   'down' → banda superior (RESISTENCIA). El LLM no debe inferir el rol.
+  // - vela_vs_cierre_previo: posición del rango de la vela en curso respecto al
+  //   cierre de la vela anterior (above/below/mixed). Prohíbe decir "vela entera
+  //   por encima" cuando low <= cierre previo.
+  const stDir = block.indicadores['superTrend_direccion'];
+  if (stDir === 'up') block.superTrend_rol = 'soporte';
+  else if (stDir === 'down') block.superTrend_rol = 'resistencia';
+
+  const vv = block.vela_viva;
+  const cierrePrev = block.cierre_ultima_cerrada;
+  if (vv && cierrePrev !== null) {
+    block.vela_vs_cierre_previo =
+      vv.low > cierrePrev ? 'above' : vv.high < cierrePrev ? 'below' : 'mixed';
+  } else if (cierrePrev !== null && closed.length > 0) {
+    const lastClosed = closed[closed.length - 1]!;
+    block.vela_vs_cierre_previo =
+      lastClosed.low > cierrePrev ? 'above' : lastClosed.high < cierrePrev ? 'below' : 'mixed';
+  }
+
+  return block;
 }
 
 /** Precio de respaldo si el ticker no trae lastPr: cierre de la vela viva o de la última cerrada. */
@@ -218,6 +241,7 @@ export async function fetchMultiTfData(
           price,
           fundingPct: fmtFunding(funding.fundingRate),
           fundingTsMs: funding.nextUpdate ? Number(funding.nextUpdate) : undefined,
+          quoteAsset: quoteAssetFromPair(pair),
         });
         for (const [tf, block] of blocks) symbol = attachTfBlock(symbol, tf, block);
         return symbol;

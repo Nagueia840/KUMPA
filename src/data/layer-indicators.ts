@@ -6,6 +6,7 @@ import {
 import {
   computeAllIndicators,
   computeEMA,
+  computeHistoricalVolatility,
   computeSessionVWAP,
   type Candle,
 } from './indicators.js';
@@ -56,6 +57,12 @@ export function computeLayerIndicators(
       case 'ema20':
         put('ema20', full.ema20);
         break;
+      case 'ema50':
+        put('ema50', full.ema50);
+        break;
+      case 'sma20':
+        put('sma20', full.sma20);
+        break;
       case 'sma50':
         put('sma50', full.sma50);
         break;
@@ -64,6 +71,18 @@ export function computeLayerIndicators(
         break;
       case 'sma200':
         put('sma200', full.sma200);
+        break;
+      case 'wma20':
+        put('wma20', full.wma20);
+        break;
+      case 'hma20':
+        put('hma20', full.hma20);
+        break;
+      case 'vwma20':
+        put('vwma20', full.vwma20);
+        break;
+      case 'vwap_semanal':
+        put('vwap_semanal', full.vwapWeekly);
         break;
       case 'rsi':
         put1('rsi', full.rsi14);
@@ -75,6 +94,21 @@ export function computeLayerIndicators(
           put('macd_histograma', full.macd.histogram);
         }
         break;
+      case 'stochastic':
+        if (full.stochastic) {
+          put1('stochastic_k', full.stochastic.k);
+          put1('stochastic_d', full.stochastic.d);
+        }
+        break;
+      case 'stochasticRsi':
+        put1('stochasticRsi', full.stochasticRsi);
+        break;
+      case 'cci':
+        put1('cci', full.cci);
+        break;
+      case 'awesomeOscillator':
+        put1('awesomeOscillator', full.awesomeOscillator);
+        break;
       case 'atr':
         put('atr', full.atr14);
         break;
@@ -84,6 +118,34 @@ export function computeLayerIndicators(
           put('bollinger_media', full.bollinger.middle);
           put('bollinger_superior', full.bollinger.upper);
         }
+        // CORRECCIÓN CONCEPTUAL FASE F: la POSICIÓN del precio en las bandas NO
+        // es volatilidad. Se expone por separado:
+        // - bollinger_bandwidth_pctil: ancho actual vs historial (mismo TF);
+        // - bollinger_estado: 'contraccion'|'normal'|'expansion' (null = historial
+        //   insuficiente → NO se afirma compresión);
+        // - bollinger_squeeze: Bollinger dentro de Keltner (contracción, SIN dirección).
+        put1('bollinger_bandwidth_pct', full.bollingerBandwidth !== null ? full.bollingerBandwidth * 100 : null);
+        put1('bollinger_bandwidth_pctil', full.bollingerBandwidthPercentile);
+        if (full.bollingerState) out['bollinger_estado'] = full.bollingerState;
+        if (full.bollingerSqueeze === true) out['bollinger_squeeze'] = 'si';
+        else if (full.bollingerSqueeze === false) out['bollinger_squeeze'] = 'no';
+        break;
+      case 'keltner':
+        if (full.keltner) {
+          put('keltner_inferior', full.keltner.lower);
+          put('keltner_media', full.keltner.middle);
+          put('keltner_superior', full.keltner.upper);
+        }
+        break;
+      case 'donchian':
+        if (full.donchian) {
+          put('donchian_inferior', full.donchian.lower);
+          put('donchian_superior', full.donchian.upper);
+        }
+        break;
+      case 'hv':
+        // HV anualizada según el timeframe real (certificación: no sqrt(365) universal).
+        put1('hv', computeHistoricalVolatility(closes, 20, periodsPerYear(tf)));
         break;
       case 'adx':
         if (full.adx) {
@@ -98,6 +160,9 @@ export function computeLayerIndicators(
           put('ichimoku_kijun', full.ichimoku.kijun);
         }
         break;
+      case 'parabolicSar':
+        put('parabolicSar', full.parabolicSar);
+        break;
       case 'superTrend':
         if (full.superTrend) {
           put('superTrend_nivel', full.superTrend.value);
@@ -109,10 +174,12 @@ export function computeLayerIndicators(
           put('pivot_p', full.pivotPoints.pivot);
           put('pivot_r1', full.pivotPoints.r1);
           put('pivot_s1', full.pivotPoints.s1);
+          put('pivot_r2', full.pivotPoints.r2);
+          put('pivot_s2', full.pivotPoints.s2);
         }
         break;
       case 'fib':
-        for (const lvl of ['0.382', '0.5', '0.618'] as const) {
+        for (const lvl of ['0.236', '0.382', '0.5', '0.618', '0.786'] as const) {
           put(`fib_${lvl.replace('.', '_')}`, full.fibonacci[lvl]);
         }
         break;
@@ -131,9 +198,36 @@ export function computeLayerIndicators(
       case 'obv':
         put('obv', full.obv);
         break;
+      case 'cmf':
+        put1('cmf', full.chaikinMF);
+        break;
+      case 'accumulationDistribution':
+        put('accumulationDistribution', full.accumulationDistribution);
+        break;
+      case 'fractals':
+        if (full.fractals) {
+          const { fractalHighs, fractalLows } = full.fractals;
+          if (fractalHighs.length > 0) put('fractal_alto_reciente', fractalHighs[fractalHighs.length - 1]!);
+          if (fractalLows.length > 0) put('fractal_bajo_reciente', fractalLows[fractalLows.length - 1]!);
+        }
+        break;
       default:
         break;
     }
   }
   return out;
+}
+
+/** Periodos por año según el timeframe (certificación de HV — ver indicators.ts). */
+function periodsPerYear(tf: TfLabel): number {
+  switch (tf) {
+    case '1M': return 12;
+    case '1W': return 52;
+    case '1D': return 365;
+    case '4H': return 365 * 6;
+    case '1H': return 365 * 24;
+    case '15m': return 365 * 24 * 4;
+    case '5m': return 365 * 24 * 12;
+    default: return 365;
+  }
 }

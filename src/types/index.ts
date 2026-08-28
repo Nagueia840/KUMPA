@@ -16,9 +16,15 @@ export interface MarketSnapshot {
   price: number;
   fundingRate: number; // tasa de funding actual (decimal, ej 0.00035)
   fundingRate7dAvg: number;
-  openInterest: number; // USD o contratos
+  openInterest: number; // unidades de activo base (Bitget: "specific coins", ej. ETH en ETHUSDT)
   openInterestDelta24h: number; // % cambio OI 24h
-  basisAnnualized: number; // % anualizado spot vs perp
+  /**
+   * FUNDING ANUALIZADO EXTRAPOLADO (%), NO basis: fundingRate × (24/intervaloHs) × 365.
+   * Es extrapolación del funding actual, no rendimiento garantizado ni premium.
+   * null = anualización UNAVAILABLE (fundingRateInterval faltante/inválido) —
+   * el funding actual sigue siendo válido, la extrapolación no se calcula.
+   */
+  annualizedFundingPct: number | null;
   volume24h: number;
   updatedAt: number;
 }

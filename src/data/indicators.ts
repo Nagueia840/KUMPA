@@ -62,6 +62,42 @@ export function vwapSessionStart(nowMs: number, anchor: VwapAnchor = 'utc'): num
 }
 
 /**
+ * Inicio de la SEMANA calendario (lunes 00:00) según ancla, en ms.
+ * Base del VWAP semanal anclado (FASE E + certificación): el "VWAP semanal"
+ * NO es "las últimas 7 velas" — es el VWAP desde el inicio de la semana
+ * calendario (lunes 00:00 en la zona del ancla), sin importar el timeframe.
+ */
+export function vwapWeekStart(nowMs: number, anchor: VwapAnchor = 'utc'): number {
+  const offsetHours = anchor === 'argentina' ? -3 : anchor === 'exchange' ? 8 : 0;
+  const shifted = new Date(nowMs + offsetHours * 3_600_000);
+  shifted.setUTCHours(0, 0, 0, 0);
+  const day = shifted.getUTCDay(); // 0=Sun … 6=Sat
+  const daysSinceMonday = (day + 6) % 7;
+  shifted.setUTCDate(shifted.getUTCDate() - daysSinceMonday);
+  return shifted.getTime() - offsetHours * 3_600_000;
+}
+
+/**
+ * VWAP SEMANAL ANCLADO: velas desde el lunes 00:00 (ancla elegida) hasta ahora.
+ * Funciona en cualquier timeframe (1D/4H/1H/15m) porque ancla por TIMESTAMP de
+ * la semana calendario, no por conteo de barras. Usa typical price (H+L+C)/3 y
+ * volumen base.
+ * CONTRATO (certificación): si la semana tiene <2 velas → null / no_disponible.
+ * NUNCA se inventa una semana con las últimas 7 barras (sin fallback).
+ */
+export function computeAnchoredWeeklyVWAP(
+  candles: Candle[],
+  opts: { anchor?: VwapAnchor; nowMs?: number } = {},
+): number | null {
+  if (candles.length === 0) return null;
+  const nowMs = opts.nowMs ?? Date.now();
+  const start = vwapWeekStart(nowMs, opts.anchor ?? 'utc');
+  const week = candles.filter((c) => c.time >= start);
+  if (week.length < 2) return null; // datos insuficientes de la semana → unavailable
+  return computeVWAP(week);
+}
+
+/**
  * VWAP de sesión (FASE E): velas desde el inicio del ancla elegido.
  * Solo velas CERRADAS (la vela viva se excluye: su volumen parcial sesgaría;
  * el fetcher ya computa indicadores sobre velas cerradas). Si la sesión tiene
@@ -90,10 +126,15 @@ export function computeSMA(values: number[], period: number): number | null {
 export function computeEMASeries(values: number[], period: number): number[] {
   if (values.length === 0 || period <= 0) return [];
   const k = 2 / (period + 1);
+  // Seed canónico: SMA de los primeros `period` valores (Wilder/TA-Lib).
+  const seedLen = Math.min(period, values.length);
+  let ema = values.slice(0, seedLen).reduce((a, b) => a + b, 0) / seedLen;
   const out: number[] = [];
-  let ema = values.slice(0, Math.min(period, values.length)).reduce((a, b) => a + b, 0) / Math.min(period, values.length);
-  out.push(ema);
-  for (let i = 1; i < values.length; i++) {
+  // La serie del seed ocupa las primeras `seedLen` posiciones (constante = SMA),
+  // y el smoothing arranca en `seedLen` (la vela siguiente al seed). Así ninguna
+  // vela cuenta doble — fix de auditoría matemática (antes arrancaba en i=1).
+  for (let i = 0; i < seedLen; i++) out.push(ema);
+  for (let i = seedLen; i < values.length; i++) {
     ema = values[i]! * k + ema * (1 - k);
     out.push(ema);
   }
@@ -302,9 +343,103 @@ export function computeBollinger(candles: Candle[], period = 20, mult = 2) {
   return { upper: middle + mult * sd, middle, lower: middle - mult * sd };
 }
 
-/** Keltner Channels. */
+/**
+ * BOLLINGER BANDWIDTH (certificación FASE F — corrección conceptual).
+ * bandwidth = (upperBand − lowerBand) / middleBand.
+ * Mide el ANCHO RELATIVO de las bandas = nivel de volatilidad. La POSICIÓN del
+ * precio dentro de las bandas NO dice nada sobre compresión: compresión es una
+ * propiedad del ancho, evaluada contra el HISTORIAL del mismo timeframe.
+ *
+ * Devuelve la serie de bandwidth de cada ventana deslizante (period).
+ * Longitud = closes.length − period + 1 (0 si no hay ventanas completas).
+ */
+export function computeBollingerBandwidthSeries(
+  candles: Candle[],
+  period = 20,
+  mult = 2,
+): number[] {
+  const closes = candles.map((c) => c.close);
+  const out: number[] = [];
+  for (let i = period - 1; i < closes.length; i++) {
+    const window = closes.slice(i - period + 1, i + 1);
+    const middle = window.reduce((a, b) => a + b, 0) / period;
+    if (middle <= 0) continue;
+    const variance = window.reduce((a, v) => a + (v - middle) ** 2, 0) / period;
+    const sd = Math.sqrt(variance);
+    const upper = middle + mult * sd;
+    const lower = middle - mult * sd;
+    out.push((upper - lower) / middle);
+  }
+  return out;
+}
+
+/**
+ * Mínimo de ventanas de bandwidth para clasificar el estado de volatilidad con
+ * un percentil mínimamente estable. Documentado: con <50 ventanas el percentil
+ * es ruido → se declara NO DISPONIBLE (no se afirma compresión).
+ */
+export const MIN_BANDWIDTH_HISTORY = 50;
+
+/**
+ * Percentil del ÚLTIMO bandwidth dentro de su propia serie histórica (0-100).
+ * null si la serie es insuficiente (< MIN_BANDWIDTH_HISTORY). El percentil
+ * compara el ancho ACTUAL contra el contexto del MISMO timeframe — no usa un
+ * umbral absoluto arbitrario.
+ */
+export function bandwidthPercentile(series: readonly number[]): number | null {
+  if (series.length < MIN_BANDWIDTH_HISTORY) return null;
+  const current = series[series.length - 1]!;
+  let menores = 0;
+  let iguales = 0;
+  for (let i = 0; i < series.length - 1; i++) {
+    if (series[i]! < current) menores++;
+    else if (series[i]! === current) iguales++;
+  }
+  const n = series.length - 1;
+  return ((menores + 0.5 * iguales) / n) * 100;
+}
+
+/**
+ * Clasifica el estado de volatilidad por el percentil de bandwidth:
+ * - pctil < 25 → 'contraccion' (bandas en el cuartil inferior de su historial);
+ * - pctil > 75 → 'expansion' (cuartil superior);
+ * - 25..75 → 'normal'.
+ * null (NO DISPONIBLE) si no hay percentil (historial insuficiente).
+ * La contracción NO asigna dirección: solo indica volatilidad comprimiéndose.
+ */
+export function classifyBandwidthState(pctil: number | null): 'contraccion' | 'normal' | 'expansion' | null {
+  if (pctil === null || !Number.isFinite(pctil)) return null;
+  if (pctil < 25) return 'contraccion';
+  if (pctil > 75) return 'expansion';
+  return 'normal';
+}
+
+/**
+ * SQUEEZE Bollinger/Keltner (criterio clásico TTM): las bandas de Bollinger
+ * quedan DENTRO de los canales de Keltner → volatilidad contraída. Solo indica
+ * contracción de volatilidad (posible preludio de expansión); NUNCA dirección.
+ * Ambos canales deben existir; si no, null (no disponible).
+ */
+export function bollingerKeltnerSqueeze(
+  bollinger: { upper: number; middle: number; lower: number } | null,
+  keltner: { upper: number; middle: number; lower: number } | null,
+): boolean | null {
+  if (!bollinger || !keltner) return null;
+  if (bollinger.middle <= 0 || keltner.middle <= 0) return null;
+  const bb = (bollinger.upper - bollinger.lower) / bollinger.middle;
+  const kc = (keltner.upper - keltner.lower) / keltner.middle;
+  return bb < kc;
+}
+
+/**
+ * Keltner Channels — VARIANTE ADOPTADA (certificación): EMA20 ± 2×ATR(20).
+ * Variante moderna popularizada por Raschke/StockCharts (EMA de cierres).
+ * (La alternativa SMA20±2×ATR existe; esta se adopta deliberadamente y se
+ * testea contra implementación independiente.)
+ */
 export function computeKeltner(candles: Candle[], period = 20, mult = 2) {
-  const middle = computeSMA(candles.map((c) => c.close), period);
+  const closes = candles.map((c) => c.close);
+  const middle = computeEMA(closes, period);
   const atr = computeATR(candles, period);
   if (middle === null || atr === null) return null;
   return { upper: middle + mult * atr, middle, lower: middle - mult * atr };
@@ -317,15 +452,26 @@ export function computeDonchian(candles: Candle[], period = 20) {
   return { upper: Math.max(...window.map((c) => c.high)), lower: Math.min(...window.map((c) => c.low)) };
 }
 
-/** Volatilidad histórica anualizada (%). */
-export function computeHistoricalVolatility(closes: number[], period = 20): number | null {
+/**
+ * Volatilidad histórica anualizada (%).
+ * Retornos logarítmicos, desviación muestral (n-1), ventana `period`.
+ * FACTOR DE ANUALIZACIÓN: `periodsPerYear` — SOLO es correcto si coincide con el
+ * timeframe de los datos. Default 365 (velas diarias). Para intradía debe
+ * pasarse explícito: 4H→365×6, 1H→365×24, 15m→365×24×4, 5m→365×24×12.
+ * (Certificación: NO usar sqrt(365) universal sobre velas intradía.)
+ */
+export function computeHistoricalVolatility(
+  closes: number[],
+  period = 20,
+  periodsPerYear = 365,
+): number | null {
   if (closes.length < period + 1) return null;
   const returns: number[] = [];
   for (let i = 1; i < closes.length; i++) returns.push(Math.log(closes[i]! / closes[i - 1]!));
   const window = returns.slice(-period);
   const mean = window.reduce((a, b) => a + b, 0) / period;
   const variance = window.reduce((a, r) => a + (r - mean) ** 2, 0) / (period - 1);
-  return Math.sqrt(variance) * Math.sqrt(365) * 100;
+  return Math.sqrt(variance) * Math.sqrt(periodsPerYear) * 100;
 }
 
 // ── Tendencia ───────────────────────────────────────────────
@@ -601,7 +747,13 @@ export function computeFibonacci(candles: Candle[]): Record<string, number> {
   return levels;
 }
 
-/** Fractales (últimos 5 máximos/mínimos). */
+/**
+ * Fractales (Williams Fractal clásico, w=2 — 5 barras).
+ * Solo se devuelven fractales CONFIRMADOS: la barra central `i` exige 2 barras
+ * a cada lado (i-2..i+2), por lo tanto el loop va hasta `length - w - 1` y las
+ * últimas 2 barras NUNCA pueden ser un fractal (confirmación pendiente).
+ * No hay look-ahead ni repaint: un fractal confirmado no cambia con barras nuevas.
+ */
 export function computeFractals(candles: Candle[], w = 2) {
   const fractalHighs: number[] = [];
   const fractalLows: number[] = [];
@@ -644,6 +796,14 @@ export interface TechnicalSnapshot {
   awesomeOscillator: number | null;
   atr14: number | null;
   bollinger: { upper: number; middle: number; lower: number } | null;
+  /** Bollinger Bandwidth actual: (upper−lower)/middle. Mide volatilidad, NO posición. */
+  bollingerBandwidth: number | null;
+  /** Percentil (0-100) del bandwidth actual en su historial (mismo timeframe); null si insuficiente. */
+  bollingerBandwidthPercentile: number | null;
+  /** Estado de volatilidad por bandwidth: 'contraccion'|'normal'|'expansion'|null (historial insuficiente). */
+  bollingerState: 'contraccion' | 'normal' | 'expansion' | null;
+  /** Squeeze Bollinger dentro de Keltner (contracción de volatilidad, SIN dirección). */
+  bollingerSqueeze: boolean | null;
   keltner: { upper: number; middle: number; lower: number } | null;
   donchian: { upper: number; lower: number } | null;
   historicalVolatility: number | null;
@@ -663,7 +823,10 @@ export interface TechnicalSnapshot {
 /** Calcula TODOS los indicadores técnicos desde velas. */
 export function computeAllIndicators(candles: Candle[], price: number): TechnicalSnapshot {
   const closes = candles.map((c) => c.close);
-  const vwapWindow = candles.slice(-7); // VWAP semanal (7 velas diarias)
+  const bollinger = computeBollinger(candles);
+  const keltner = computeKeltner(candles);
+  const bwSeries = computeBollingerBandwidthSeries(candles);
+  const bwPctil = bandwidthPercentile(bwSeries);
   return {
     price,
     sma20: computeSMA(closes, 20),
@@ -675,7 +838,8 @@ export function computeAllIndicators(candles: Candle[], price: number): Technica
     wma20: computeWMA(closes, 20),
     hma20: computeHMA(closes, 20),
     vwma20: computeVWMA(candles, 20),
-    vwapWeekly: computeVWAP(vwapWindow),
+    // VWAP semanal ANCLADO (semana calendario por timestamp, no 7 velas).
+    vwapWeekly: computeAnchoredWeeklyVWAP(candles),
     rsi14: computeRSI(closes, 14),
     macd: computeMACD(closes),
     stochastic: computeStochastic(candles),
@@ -685,8 +849,12 @@ export function computeAllIndicators(candles: Candle[], price: number): Technica
     roc10: computeROC(closes, 10),
     awesomeOscillator: computeAwesomeOscillator(candles),
     atr14: computeATR(candles),
-    bollinger: computeBollinger(candles),
-    keltner: computeKeltner(candles),
+    bollinger,
+    bollingerBandwidth: bollinger && bollinger.middle > 0 ? (bollinger.upper - bollinger.lower) / bollinger.middle : null,
+    bollingerBandwidthPercentile: bwPctil,
+    bollingerState: classifyBandwidthState(bwPctil),
+    bollingerSqueeze: bollingerKeltnerSqueeze(bollinger, keltner),
+    keltner,
     donchian: computeDonchian(candles),
     historicalVolatility: computeHistoricalVolatility(closes),
     adx: computeADX(candles),

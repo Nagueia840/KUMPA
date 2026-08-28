@@ -7,6 +7,12 @@ function makeScan(funding: number, price: number): AggregatedScan {
   return {
     symbol: 'BTC',
     pair: 'BTCUSDT',
+    primarySource: 'Bitget',
+    primaryStatus: 'ok',
+    crosschecks: { binance: { status: 'ok' }, bybit: { status: 'ok' } },
+    premiumState: 'flat',
+    openInterestUnit: 'BTC',
+    quoteAsset: 'USDT',
     snapshot: {
       symbol: 'BTC',
       price,
@@ -14,7 +20,7 @@ function makeScan(funding: number, price: number): AggregatedScan {
       fundingRate7dAvg: funding,
       openInterest: 0,
       openInterestDelta24h: 0,
-      basisAnnualized: 0,
+      annualizedFundingPct: 0,
       volume24h: 0,
       updatedAt: 0,
     },
@@ -34,7 +40,7 @@ function makeScan(funding: number, price: number): AggregatedScan {
 }
 
 describe('parseAlert', () => {
-  it('parsea funding above (0.05% → 0.0005)', () => {
+  it('parsea funding above (0.05% â†’ 0.0005)', () => {
     expect(parseAlert('funding BTC > 0.05')).toEqual({
       type: 'funding_above',
       symbol: 'BTC',
@@ -50,7 +56,7 @@ describe('parseAlert', () => {
     });
   });
 
-  it('rechaza texto inválido', () => {
+  it('rechaza texto invÃ¡lido', () => {
     expect(parseAlert('hola mundo')).toBeNull();
   });
 });
@@ -68,7 +74,7 @@ describe('checkAlert', () => {
     expect(checkAlert(rule, makeScan(0.0006, 78000)).triggered).toBe(true);
   });
 
-  it('no dispara funding_above si está debajo', () => {
+  it('no dispara funding_above si estÃ¡ debajo', () => {
     const rule: AlertRule = {
       chatId: 1,
       type: 'funding_above',
@@ -92,3 +98,4 @@ describe('checkAlert', () => {
     expect(checkAlert(rule, makeScan(0.0005, 79000)).triggered).toBe(true);
   });
 });
+

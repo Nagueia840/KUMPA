@@ -1,5 +1,6 @@
 import type { Bot } from 'grammy';
 import { processUpdate, type UpdateQueueStore } from './queue.js';
+import { KUMPA_BUILD_ID } from '../config/build-id.js';
 
 /**
  * NÚCLEO DEL EDGE WORKER (runtime-agnóstico — corre en Deno y es testeable en Node).
@@ -29,6 +30,9 @@ export async function processOneUpdate(
   updateId: number,
 ): Promise<WorkerResult> {
   const t0 = Date.now();
+  // BUILD_ID: hash determinístico del source tree (trazabilidad de versión).
+  // Se loguea en cada invocación para poder verificar qué bundle corre en prod.
+  console.log(`[worker] build=${KUMPA_BUILD_ID}`);
   console.log(`[worker-stage] update=${updateId} stage=start`);
   if (await deps.store.isUpdateProcessed(updateId)) return 'ignored';
   console.log(`[worker-stage] update=${updateId} stage=idempotency_ok ms=${Date.now() - t0}`);

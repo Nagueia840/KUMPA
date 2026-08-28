@@ -21,7 +21,7 @@ export const TOOLS = [
     function: {
       name: 'get_market_snapshot',
       description:
-        'Obtiene precio, funding rate, open interest y basis anualizado de un cripto activo (fuente primaria Bitget, cross-check Binance/Bybit). Usala cuando el usuario pida analizar, mirar o consultar un activo.',
+        'Obtiene precio, funding rate actual, funding anualizado estimado, premium/discount del perpetual y open interest de un cripto activo (fuente primaria Bitget, cross-check Binance/Bybit). Usala cuando el usuario pida analizar, mirar o consultar un activo.',
       parameters: {
         type: 'object',
         properties: {
@@ -160,16 +160,27 @@ export async function executeTool(
       return {
         symbol: scan.symbol,
         pair: scan.pair,
-        source: 'Bitget (primario)',
-        priceUsd: scan.snapshot.price,
+        source: scan.primarySource, // 'Bitget' (primaria) o 'Bybit'/'Binance' (fallback explícito)
+        primaryStatus: scan.primaryStatus, // 'ok' | 'fallback'
+        crosschecks: {
+          binance: scan.crosschecks.binance.status,
+          bybit: scan.crosschecks.bybit.status,
+        },
+        price: scan.snapshot.price, // unidad: scan.quoteAsset (USDT para ETHUSDT — NO USD)
+        quoteAsset: scan.quoteAsset, // 'USDT' | 'USDC' | ... (USDT ≠ USD, sin paridad asumida)
         fundingBitgetPct: scan.context.bitgetFunding * 100,
         fundingBinancePct: scan.context.binanceFunding * 100,
         fundingBybitPct: scan.context.bybitFunding * 100,
         fundingSpreadBps: scan.context.fundingSpreadBps,
         openInterestBitget: scan.context.bitgetOI,
         openInterestBybit: scan.context.bybitOI,
-        basisAnnualizedPct: scan.snapshot.basisAnnualized * 100,
-        volume24hUsd: scan.snapshot.volume24h,
+        openInterestUnit: scan.openInterestUnit, // activo base (Bitget doc: "specific coins", ej. ETH en ETHUSDT)
+        annualizedFundingPct: scan.snapshot.annualizedFundingPct, // extrapolación, NO basis; null si intervalo no disponible
+        premiumPct: scan.context.indexPrice > 0
+          ? ((scan.context.markPrice - scan.context.indexPrice) / scan.context.indexPrice) * 100
+          : null,
+        premiumState: scan.premiumState, // 'premium' | 'discount' | 'flat' | 'unknown' (del premium real, nunca del funding; sin contango/backwardation en perps)
+        volume24h: scan.snapshot.volume24h, // en quoteAsset (USDT)
         btcDominancePct: scan.context.btcDominancePct,
         globalCapUsd: scan.context.globalCapUsd,
       };
@@ -177,7 +188,13 @@ export async function executeTool(
     case 'get_price': {
       const symbol = String(args.symbol ?? 'BTC');
       const scan = await buildAggregatedScan(symbol, deps);
-      return { symbol: scan.symbol, priceUsd: scan.snapshot.price, source: 'Bitget' };
+      return {
+        symbol: scan.symbol,
+        price: scan.snapshot.price,
+        quoteAsset: scan.quoteAsset, // 'USDT' para ETHUSDT/BTCUSDT (NO USD)
+        source: scan.primarySource,
+        primaryStatus: scan.primaryStatus,
+      };
     }
     case 'set_price_alert': {
       const symbol = String(args.symbol ?? 'BTC').toUpperCase();

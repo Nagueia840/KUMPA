@@ -86,6 +86,28 @@ export class BitgetClient {
     return ticker;
   }
 
+  /**
+   * MARK/INDEX PRICE de Bitget (premium independiente de secundarias).
+   * Endpoint v2 documentado (Get Symbol Price — mark/index/market).
+   * Si el endpoint no responde, `request` lanza → el snapshot lo degrada a
+   * premiumState 'unknown' (nunca usa Binance/Bybit como requisito).
+   */
+  async getMarkPrice(
+    symbol: string,
+    productType: ProductType = 'USDT-FUTURES',
+  ): Promise<{ symbol: string; markPrice: string; indexPrice: string }> {
+    const data = await this.request<{ symbol: string; markPrice: string; indexPrice: string }[]>({
+      method: 'GET',
+      path: '/api/v2/mix/market/mark-price',
+      query: { symbol, productType },
+    });
+    const mp = data[0];
+    if (!mp || mp.markPrice === undefined || mp.indexPrice === undefined) {
+      throw new BitgetError('NO_DATA', `Sin mark/index para ${symbol}`);
+    }
+    return mp;
+  }
+
   async getCurrentFunding(
     symbol: string,
     productType: ProductType = 'USDT-FUTURES',

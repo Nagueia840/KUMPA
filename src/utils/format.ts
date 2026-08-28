@@ -8,14 +8,20 @@ const pct = (x: number) => `${(x * 100).toFixed(4)}%`;
 export function formatScan(scan: AggregatedScan): string {
   const s = scan.snapshot;
   const c = scan.context;
+  const src = scan.primarySource === 'Bitget' ? 'Bitget (primaria)' : `${scan.primarySource} (fallback)`;
+  const cc = [
+    scan.crosschecks.binance.status === 'ok' ? 'Binance ok' : 'Binance N/A',
+    scan.crosschecks.bybit.status === 'ok' ? 'Bybit ok' : 'Bybit N/A',
+  ].join(' · ');
   return [
     `📊 <b>${scan.symbol}</b> (${scan.pair})`,
+    `• Fuente: ${src} · Cross-check: ${cc}`,
     '',
     `• Precio mark: $${s.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
     `• Funding Bitget: ${pct(c.bitgetFunding)} (7d avg ${pct(s.fundingRate7dAvg)})`,
     `• Funding Binance: ${pct(c.binanceFunding)} · Bybit: ${pct(c.bybitFunding)}`,
     `• Spread funding (BG−BY): ${c.fundingSpreadBps.toFixed(2)} bps`,
-    `• Basis anualizado (aprox): ${(s.basisAnnualized * 100).toFixed(2)}%`,
+    `• Funding anualizado (extrapolado): ${s.annualizedFundingPct !== null ? `${(s.annualizedFundingPct).toFixed(2)}%` : 's/d (intervalo no disponible)'}`,
     `• OI Bitget: ${c.bitgetOI.toLocaleString('en-US')} | Bybit: ${c.bybitOI.toLocaleString('en-US')}`,
     `• Vol 24h Bitget: $${s.volume24h.toLocaleString('en-US')}`,
     `• Market cap global: $${(c.globalCapUsd / 1e12).toFixed(2)}T · BTC dom: ${c.btcDominancePct.toFixed(1)}%`,
